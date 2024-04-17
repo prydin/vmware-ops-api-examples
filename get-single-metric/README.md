@@ -24,5 +24,5 @@ python getmetric.py getmetric [-h] -H HOST -u USER -p PASSWORD [-a AUTHSOURCE] [
 
 ## Example 
 ```commandline
-python3 getmetric.py -H vrops.example.com -u admin -p secret -r VirtualMachine -n my-vm -m "CPU|Demand" -U "%" 
+python getmetric.py -H vrops.example.com -u admin -p secret -r VirtualMachine -n my-vm -m "CPU|Demand" -U "%" 
 ```
