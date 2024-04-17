@@ -5,7 +5,7 @@ Example of getting the latest value of a single metric for a resource.
 ## Usage
 
 ```
-python getmetric.py getmetric [-h] -H HOST -u USER -p PASSWORD [-a AUTHSOURCE] [-k ADAPTERKIND] -r RESOURCEKIND -n RESOURCENAME -m METRIC [-U UNIT]
+python getmetric.py [-h] -H HOST -u USER -p PASSWORD [-a AUTHSOURCE] [-k ADAPTERKIND] -r RESOURCEKIND -n RESOURCENAME -m METRIC [-U UNIT]
 ```
 
 ### Arguments
