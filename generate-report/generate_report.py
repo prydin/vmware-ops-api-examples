@@ -1,3 +1,4 @@
+import argparse
 import json
 import os.path
 import sys
@@ -10,18 +11,32 @@ sys.path.append("../common")
 
 from client import VRopsClient
 
-# Create connection and authenticate
-with open(os.path.expanduser("~/ariatest.json"), "r") as config_file:
-    config = json.load(config_file)
-client = VRopsClient(config["url"], config["username"], config["password"])
+# Parse arguments
+parser = argparse.ArgumentParser(
+    prog='getmetric',
+    description='Returns the latest value of a specified metric',
+)
+parser.add_argument('-H', '--host', required=True)
+parser.add_argument('-u', '--user', required=True)
+parser.add_argument('-p', '--password', required=True)
+parser.add_argument("-a", '--authsource', required=False)
+parser.add_argument("-k", '--adapterkind', required=False, default="VMWARE")
+parser.add_argument('-r', '--resourcekind', required=True)
+parser.add_argument('-n', '--resourcename', required=True)
+parser.add_argument('-R', '--reportname', required=True)
+
+args = parser.parse_args()
+
+# Create a client connection
+client = VRopsClient(f"https://{args.host}", args.user, args.password, args.authsource)
 
 # To run a report, we need to find report definition as well as the root resource to run the report against.
 # Start by finding the resource. In this case, we'll use a Datacenter as the root resource
-resources = client.get_resources("VMWARE", "Datacenter", "vcfcons-mgmt-dc01")
+resources = client.get_resources(args.adapterkind, args.resourcekind, args.resourcename)
 resource_id = resources[0]["identifier"]
 
 # Next, we look up the report definition
-report_query = {"name": "Demo Cluster Capacity" }
+report_query = {"name": args.reportname }
 reports = client.get(f"/api/reportdefinitions?{urlencode(report_query)}")
 report_definition_id = reports["reportDefinitions"][0]["id"]
 
@@ -32,7 +47,7 @@ report_spec = {
 }
 report_run = client.post("/api/reports", report_spec)
 
-# Grab the ID of the run so we can check it it's completed.
+# Grab the ID of the run so we can check if it's completed.
 run_id = report_run["id"]
 
 # Check for completion
