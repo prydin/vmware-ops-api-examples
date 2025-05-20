@@ -40,7 +40,7 @@ class VRopsClient:
         self.url_base = url_base + "/suite-api"
         cred_payload = {"username": username, "password": password}
         if auth_source:
-            cred_payload["authSource"] = auth_source;
+            cred_payload["authSource"] = auth_source
         credentials = json.dumps(cred_payload)
         result = requests.post(url=self.url_base + "/api/auth/token/acquire",
                                data=credentials,
