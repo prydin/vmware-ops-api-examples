@@ -124,7 +124,7 @@ parser.add_argument('-u', '--user', required=True)
 parser.add_argument('-p', '--password', required=True)
 parser.add_argument("-a", '--authsource', required=False)
 parser.add_argument("-k", '--adapterkind', required=False, default="VMWARE")
-parser.add_argument('-r', '--resourcekind', required=True)
+parser.add_argument('-r', '--resourcekind', required=False, default="VirtualMachine")
 parser.add_argument('-t', '--tag', required=True)
 parser.add_argument('-o', '--output', required=False)
 parser.add_argument('-U', '--unsafe', required=False, action="store_true")
@@ -168,15 +168,12 @@ for relation in vsan_relations:
         encryption_map[resourceId] = encrypted
 
 # Print the results
-for resource in resources:
-    print(f"{resource['resourceKey']['name']},{encryption_map.get(resource['identifier'], 'unknown')}")
+def write_output(out):
+    for resource in resources:
+        out.write(f"{resource['resourceKey']['name']},{encryption_map.get(resource['identifier'], 'unknown')}\n")
 
-
-
-"""
 if args.output:
-    with open(args.output, "wb") as f:
-        get_streaming(f"/api/reports/{run_id}/download?format=csv", f)
+    with open(args.output, "w") as f:
+        write_output(f)
 else:
-    get_streaming(f"/api/reports/{run_id}/download?format=csv", sys.stdout.buffer)
-"""
+    write_output(sys.stdout)
