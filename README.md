@@ -6,5 +6,5 @@ Repository of various useful API examples
 |----------------------------------------|-----------------------------------------------------------------------------------------------|
 | [get-single-metric](get-single-metric) | Shows how to retrieve simple metrics based on display name                                    |
 | [generate-report](generate-report)     | Demonstrates how to programatically run and download a report                                 |
-| [encryption-staus](encryption-status)  | Gather VMs based on a tag and check the encryption status on the underlying vSAN datastore    |
+| [encryption-status](encryption-status) | Gather VMs based on a tag and check the encryption status on the underlying vSAN datastore    |
 
