@@ -22,6 +22,7 @@ python encryption-status.py [-h] -H HOST -u USER -p PASSWORD [-a AUTHSOURCE] [-k
   -n RESOURCENAME
   -t TAG --tag TAG
   -o OUTPUT --output OUTPUT
+  -- unsafe (disables certificate checking)
  
 ```
 
