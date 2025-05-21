@@ -205,9 +205,12 @@ class VRopsClient:
     def get_latest_metrics(self, resource_ids, metric_keys):
         payload = {
             "resourceId": resource_ids,
-            "statKey": metric_keys
+            "statKey": metric_keys,
+            "maxSamples": 1,
+            "currentOnly": True
+
         }
-        return self.post("/api/resources/stats/query", payload)
+        return self.post("/api/resources/stats/latest/query", payload)
 
     """
     Returns the value of the specified properties of a specific resource
@@ -228,7 +231,7 @@ class VRopsClient:
             "resourceIds": [resource_id],
             "propertyKeys": prop_keys
         }
-        values = self.post("/api/resources/properties/latest/query", payload)["values"]
+        values = self.post("/api/resources/properties/query", payload)["values"]
         return values[0] if len(values) > 0 else None
 
     """
