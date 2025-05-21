@@ -10,8 +10,8 @@ from client import VRopsClient
 
 # Parse arguments
 parser = argparse.ArgumentParser(
-    prog='getmetric',
-    description='Returns the latest value of a specified metric',
+    prog='prometheus-scraper',
+    description='A very simple Prometheus scraper for getting metrics from VCF Ops',
 )
 parser.add_argument('-H', '--host', required=True)
 parser.add_argument('-u', '--user', required=True)
