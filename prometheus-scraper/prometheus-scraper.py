@@ -3,7 +3,7 @@ import sys
 import time
 from re import split
 
-from prometheus_client import start_http_server, Gauge, generate_latest, REGISTRY
+from prometheus_client import start_http_server, Gauge
 
 from client import VRopsClient
 
