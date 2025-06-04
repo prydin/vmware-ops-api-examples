@@ -1,4 +1,4 @@
-# Run a report
+# Import groups
 
 Example of creating custom groups based on a simple CSV file.
 
