@@ -1,0 +1,17 @@
+- resourceQuery:
+    adapterKind: ["VMWARE"]
+    resourceKind: ["HostSystem"]
+  metrics:
+    - cpu|demandmhz
+    - cpu|demandPct
+- resourceQuery:
+    adapterKind: ["VMWARE"]
+    resourceKind: ["VirtualMachine"]
+  metrics:
+    - cpu|demandmhz
+    - cpu|demandPct
+    - cpu|usage
+    - mem|usage_average
+    - mem|host_demand
+    - mem|guest_demand
+    - mem|density

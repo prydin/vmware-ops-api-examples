@@ -110,8 +110,11 @@ app_table = {}
 with open(filename, "r") as csvfile:
     rdr = csv.reader(csvfile)
     for row in rdr:
-        app = row[0]
-        vm = row[1]
+        app = row[1]
+        vm = row[0]
+        if not app:
+            sys.stderr.write(f"Warning: VM {vm} did not have a tag\n")
+            continue
         app_entry = app_table.get(app, None)
         if not app_entry:
             app_entry = [vm]
@@ -126,7 +129,7 @@ for app in app_table:
         vms = get_resources_by_name("VMWARE", "VirtualMachine", vm_name)
         found = False
         for vm in vms:
-            if vm["resourceKey"]["name"] == vm_name:
+            if vm["resourceKey"]["name"].lower() == vm_name.lower():
                 vm_ids.append(vm["identifier"])
                 found = True
         if not found:

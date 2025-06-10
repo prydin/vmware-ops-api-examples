@@ -1,5 +1,10 @@
-app1,vcf-ops-vcf01
-app1,vcf-ops-vrli-vc01
-app1,vcf-ops-vrli-vc01-nsx01c
-app2,vcf-ops-vrli-vc02
-app2,vcfops-pp-esx07
+vcf-ops-vcf01,app1,hello
+vcf-ops-vrli-vc01,app1,hello
+nonexistent,app1,hello
+vcf-ops-vrli-vc01-nsx01c,app1,hello
+vcf-ops-vrli-vc02,app2,hello
+vcfops-pp-esx07,app2,hello
+vcfops-pp-esx07,,hello
+vcf-ops-vrli-vc01-nsx01c,,hello
+nope1,app3,lfklfk
+nope2,app3,ldf
