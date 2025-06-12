@@ -1,13 +1,13 @@
 import argparse
-from sys import stderr, stdout
+import sys
+from sys import stderr
 import time
-from os import write
 
 import yaml
-from prometheus_client import start_http_server, Gauge
 
 from client import VRopsClient
 
+key_ttable = str.maketrans(" |.$", "____")
 
 # Parse arguments
 parser = argparse.ArgumentParser(
@@ -16,12 +16,21 @@ parser = argparse.ArgumentParser(
 )
 parser.add_argument('-H', '--host', required=True)
 parser.add_argument('-u', '--user', required=True)
-parser.add_argument('-p', '--password', required=True)
+parser.add_argument('-p', '--password', required=False)
+parser.add_argument('-P', '--passwordfile', required=False)
 parser.add_argument("-a", '--authsource', required=False)
 parser.add_argument("-c", "--config", required=False, default="./config.yaml")
 
 
 args = parser.parse_args()
+
+if (not args.password and not args.passwordfile) or (args.password and args.passwordfile):
+    stderr.write("Either password or password file must be specified (mutially exclusive)\n")
+    sys.exit(1)
+
+if args.passwordfile:
+    with open(args.passwordfile, "r") as f:
+        args.password = f.read().strip()
 
 # Load configuration
 with open(args.config, "r") as config_file:
@@ -41,7 +50,7 @@ try:
 
         metrics = config_section["metrics"]
         for metric in metrics:
-            metric = metric.replace("|", "_")
+            metric = metric.translate(key_ttable)
         while True:
             resources = client.query_resources(config_section["resourceQuery"], page,1000)
             page += 1
@@ -59,9 +68,9 @@ try:
             metric_result = client.get_latest_metrics(resource_ids, metrics)["values"]
             for resource_metrics in metric_result:
                 resource_id = resource_metrics["resourceId"]
-                resource_name = resource_names.get(resource_id, "-unknown-")
-                resource_kind = resource_kinds.get(resource_id, "-unknown-")
-                adapter_kind = adapter_kinds.get(resource_id, "-unknown-")
+                resource_name = resource_names.get(resource_id, "-unknown-").replace(" ", "\\ ")
+                resource_kind = resource_kinds.get(resource_id, "-unknown-").replace(" ", "\\ ")
+                adapter_kind = adapter_kinds.get(resource_id, "-unknown-").replace(" ", "\\ ")
                 for stat in resource_metrics["stat-list"]["stat"]:
                     stat_key = stat["statKey"]["key"]
                     timestamps = stat["timestamps"]
@@ -73,10 +82,11 @@ try:
                     else:
                         measurement = "default"
                         field = stat_key
-                    field = field.replace("|", "_")
+                    field = field.translate(key_ttable)
                     values = stat["data"]
                     timestamps = stat["timestamps"]
                     for i in range(len(timestamps)):
+
                         out = f"{measurement},name={resource_name},resourceKind={resource_kind},adapterKind={adapter_kind} {field}={values[i]} {timestamps[i]*1000000}"
                         print(out)
 
