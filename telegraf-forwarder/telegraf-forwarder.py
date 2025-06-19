@@ -11,8 +11,8 @@ key_ttable = str.maketrans(" |.$", "____")
 
 # Parse arguments
 parser = argparse.ArgumentParser(
-    prog='prometheus-scraper',
-    description='A very simple Prometheus scraper for getting metrics from VCF Ops',
+    prog='telegraf-forwarder',
+    description='A simple Telgraf forwarder for getting metrics from VCF Ops',
 )
 parser.add_argument('-H', '--host', required=True)
 parser.add_argument('-u', '--user', required=True)
