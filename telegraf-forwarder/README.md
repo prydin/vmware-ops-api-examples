@@ -1,31 +1,50 @@
-# Prometheus Scraper
+# Telegraf Forwarder
 
-Example of getting the latest value of a single metric for a resource. To be useful 
-in a real-life scenario, the code would have to be modified to support more thatn 
-1000 resources and to allow chunked queries.
+Example of how metrics can be forwarded to Telegraf for futher processing. The metrics are defined in a
+config file as described below 
 
 ## Usage
 
 ```
-python prometheus-scraper [-h] -H HOST -u USER -p PASSWORD [-a AUTHSOURCE]
+python telegraf-forwarder [-h] -H HOST -u USER -p PASSWORD [-a AUTHSOURCE]
                           [-k ADAPTERKIND] -r RESOURCEKIND -m METRICS
                           [-P PORT]
 ```
 
 ### Arguments
 ```
- -h, --help            show this help message and exit
+ optional arguments:
+  -h, --help            show this help message and exit
   -H HOST, --host HOST
   -u USER, --user USER
   -p PASSWORD, --password PASSWORD
+  -P PASSWORDFILE, --passwordfile PASSWORDFILE
   -a AUTHSOURCE, --authsource AUTHSOURCE
-  -k ADAPTERKIND, --adapterkind ADAPTERKIND
-  -r RESOURCEKIND, --resourcekind RESOURCEKIND
-  -m METRICS, --metrics METRICS
-  -P PORT, --port PORT
+  -c CONFIG, --config CONFIG
+```
+
+## Config file example
+```yaml
+- resourceQuery:
+    adapterKind: ["VMWARE"]
+    resourceKind: ["HostSystem"]
+  metrics:
+    - cpu|demandmhz
+    - cpu|demandPct
+- resourceQuery:
+    adapterKind: ["VMWARE"]
+    resourceKind: ["VirtualMachine"]
+  metrics:
+    - cpu|demandmhz
+    - cpu|demandPct
+    - cpu|usage
+    - mem|usage_average
+    - mem|host_demand
+    - mem|guest_demand
+    - mem|density
 ```
 
 ## Example 
 ```commandline
-python -H example.local -u admin -p secret -r VirtualMachine -m cpu|demandpct,cpu|demandmhz 
+python -H example.local -u admin -p secret -r VirtualMachine -c config.yaml
 ```
