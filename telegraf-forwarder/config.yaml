@@ -6,6 +6,12 @@
     - cpu|demandPct
 - resourceQuery:
     adapterKind: ["VMWARE"]
+    resourceKind: ["ClusterComputeResource"]
+  metrics:
+    - cpu|demandmhz
+    - cpu|demandPct
+- resourceQuery:
+    adapterKind: ["VMWARE"]
     resourceKind: ["VirtualMachine"]
   metrics:
     - cpu|demandmhz

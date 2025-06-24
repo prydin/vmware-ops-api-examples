@@ -1,11 +1,83 @@
 import argparse
 import sys
 from sys import stderr
-import time
-
 import yaml
 
-from client import VRopsClient
+import time
+import requests
+import json
+import urllib3
+
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+
+PAGESIZE = 1000
+
+class VRopsClient:
+    headers = {"Accept": "application/json", "Content-Type": "application/json", "X-Ops-API-use-unsupported": "true"}
+
+    url_base = ""
+
+    token = ""
+
+    def __init__(self, url_base, username=None, password=None, auth_source=None):
+        # Validate password. This will return a token that can be used
+        # throughout the session.
+        self.url_base = url_base + "/suite-api"
+        cred_payload = {"username": username, "password": password}
+        if auth_source:
+            cred_payload["authSource"] = auth_source
+        credentials = json.dumps(cred_payload)
+        result = requests.post(url=self.url_base + "/api/auth/token/acquire",
+                               data=credentials,
+                               verify=False, headers=self.headers)
+        if result.status_code != 200:
+            print(str(result.status_code) + " " + str(result.content))
+            exit(1)
+        json_data = json.loads(result.content)
+        token = json_data["token"]
+        self.headers["Authorization"] = "vRealizeOpsToken " + token
+
+    def get(self, uri):
+        response = requests.get(url=self.url_base + uri,
+                                headers=self.headers,
+                                verify=False)
+        if response.status_code != 200:
+            raise Exception("HTTP Status: %d, details: %s" % (response.status_code, response.content))
+        return response.json()
+
+
+    def get_raw(self, uri):
+        response = requests.get(url=self.url_base + uri,
+                                headers=self.headers,
+                                verify=False)
+        if response.status_code != 200:
+            raise Exception("HTTP Status: %d, details: %s" % (response.status_code, response.content))
+        return response.content
+
+
+    def post(self, url, data):
+        response = requests.post(url=self.url_base + url,
+                                 headers=self.headers,
+                                 verify=False,
+                                 json=data)
+        if response.status_code != 200:
+            raise Exception("HTTP Status: %d, details: %s" % (response.status_code, response.content))
+        return response.json()
+
+
+    def query_resources(self, query, page=0, pagesize=1000):
+        return self.post(f"/api/resources/query?page={page}&pageSize={pagesize}", query)["resourceList"]
+
+
+    def get_latest_metrics(self, resource_ids, metric_keys):
+        payload = {
+            "resourceId": resource_ids,
+            "statKey": metric_keys,
+            "maxSamples": 1,
+            "currentOnly": True
+
+        }
+        return self.post("/api/resources/stats/latest/query", payload)
 
 key_ttable = str.maketrans(" |.$", "____")
 
@@ -52,7 +124,7 @@ try:
         for metric in metrics:
             metric = metric.translate(key_ttable)
         while True:
-            resources = client.query_resources(config_section["resourceQuery"], page,1000)
+            resources = client.query_resources(config_section["resourceQuery"], page,PAGESIZE)
             page += 1
             stderr.write(f"Found {len(resources)} resources\n")
             if len(resources) == 0:
