@@ -2,6 +2,8 @@ import argparse
 import ssl
 import json
 import sys
+import time
+from functools import lru_cache
 from time import sleep
 from urllib.error import URLError
 from urllib.parse import urlencode
@@ -60,7 +62,10 @@ def post(uri, data):
     response = request.urlopen(url=rq, context=ssl_context, data=json.dumps(data).encode("UTF-8"))
     if response.status not in range(200,299):
         raise Exception("HTTP Status: %d, details: %s" % (response.status, response.read().decode))
-    return json.loads(response.read().decode("UTF-8"))
+    content = response.read().decode("UTF-8")
+    if len(content) == 0:
+        return None
+    return json.loads(content)
 
 def put(uri, data):
     rq = request.Request(url=url_base + uri, headers=headers, method="PUT")
@@ -69,6 +74,7 @@ def put(uri, data):
         raise Exception("HTTP Status: %d, details: %s" % (response.status, response.read().decode))
     return json.loads(response.read().decode("UTF-8"))
 
+@lru_cache(maxsize=1000)
 def get_resources_by_name(adapter_kind, resource_kind, name):
     payload = {
         "adapterKind": [adapter_kind],
@@ -77,6 +83,56 @@ def get_resources_by_name(adapter_kind, resource_kind, name):
     }
     resource_response = post("/api/resources/query", payload)
     return resource_response["resourceList"]
+
+@lru_cache(maxsize=100000)
+def get_resource_by_name(adapter_kind, resource_kind, name):
+    resources = get_resources_by_name(adapter_kind, resource_kind, name)
+    for r in resources:
+        if r["resourceKey"]["name"] == name:
+            return r
+    return None
+
+def set_ops_properties(id, group_names):
+    payload = {
+        "property-content":
+            [
+                {
+                    "statKey": "ServiceNow|Tags",
+                    "timestamps": [ int(time.time())*1000 ],
+                    "values": [group_names]
+                }
+            ]
+        }
+    return post(f"/api/resources/{id}/properties", payload)
+
+def create_ops_app(name):
+    payload = {
+        "resourceKey": {
+            "name": name,
+            "adapterKindKey": "Container",
+            "resourceKindKey": "CMDB Discovered App"
+        },
+        "autoResolveMembership": True,
+        "membershipDefinition": {
+            "rules":
+                [
+                    {
+                        "resourceKindKey": {
+                            "adapterKind": "VMWARE",
+                            "resourceKind": "VirtualMachine"
+                        },
+                        "propertyConditionRules": [
+                                {
+                                "key": "ServiceNow|Tags",
+                                "stringValue": "|" + name + "|",
+                                "compareOperator": "CONTAINS"
+                            }
+                        ]
+                    }
+                ]
+            }
+        }
+    return post("/api/resources/groups", payload)
 
 filename = "groups.csv"
 
@@ -106,7 +162,8 @@ except URLError as e:
         raise e
 
 # Build application table
-app_table = {}
+vm_to_app = {}
+visited_apps = {}
 with open(filename, "r") as csvfile:
     rdr = csv.reader(csvfile)
     for row in rdr:
@@ -115,47 +172,29 @@ with open(filename, "r") as csvfile:
         if not app:
             sys.stderr.write(f"Warning: VM {vm} did not have a tag\n")
             continue
-        app_entry = app_table.get(app, None)
-        if not app_entry:
-            app_entry = [vm]
-            app_table[app] = app_entry
+        vm_obj = get_resource_by_name("VMWARE", "VirtualMachine", vm)
+        if not vm_obj:
+            sys.stderr.write(f"Warning: VM {vm} was not found in VCF Ops\n")
+            continue
+        vm_id = vm_obj["identifier"]
+        if vm_id in vm_to_app:
+            vm_to_app[vm_id] += "|" + app + "|"
         else:
-            app_entry.append(vm)
+            vm_to_app[vm_id] = "|" + app + "|"
+        visited_apps[app] = True
 
-# Create or update group for each application
-for app in app_table:
-    vm_ids = []
-    for vm_name in app_table[app]:
-        vms = get_resources_by_name("VMWARE", "VirtualMachine", vm_name)
-        found = False
-        for vm in vms:
-            if vm["resourceKey"]["name"].lower() == vm_name.lower():
-                vm_ids.append(vm["identifier"])
-                found = True
-        if not found:
-            sys.stderr.write(f"Warning: VM {vm_name} was not found in VCF Ops\n")
+# Tag VMs with application names
+n = 0
+for k, v in vm_to_app.items():
+    set_ops_properties(k, v)
+    if n > 0 and n % 10 == 0:
+        sys.stderr.write(f"{n} virtual machines updated\n")
+    n += 1
+sys.stderr.write(f"{n} virtual machines updated\n")
 
-    # Prepare group payload
-    payload = {
-            "resourceKey": {
-                "name": app,
-                "adapterKindKey": "Container",
-                "resourceKindKey": "CMDB Discovered App"
-            },
-            "autoResolveMembership": False,
-            "membershipDefinition": {
-                "includedResources": vm_ids
-            }
-    }
-    groups = get_resources_by_name("Container", "CMDB Discovered App", app)
-    group = None
-    for candidate in groups:
-        if candidate["resourceKey"]["name"] == app:
-            group = candidate
-    if not group:
-        post("/api/resources/groups", payload)
-    else:
-        payload["id"] = group["identifier"]
-        print(json.dumps(payload))
-        put("/api/resources/groups", payload)
-
+# Create custom groups as needed
+for app in visited_apps.keys():
+    app_obj = get_resource_by_name("Container", "CMDB Discovered App", app)
+    if not app_obj:
+        create_ops_app(app)
+        sys.stderr.write(f"Created group {app}\n")
