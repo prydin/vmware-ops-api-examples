@@ -18,6 +18,11 @@ headers = {"Accept": "application/json", "Content-Type": "application/json", "X-
 
 ssl_context = ssl.create_default_context()
 
+# Change these constants to suit your environment
+VM_COLUMN_NUMBER = 0                # The column containing the VM name
+APP_COLUMN_NUMBER = 1               # The column containing the application name
+GROUP_TYPE = "CMDB Discovered App"  # The group type for application grouping
+TAG_FIELD = "ServiceNow|Tags"       # The VN field to use for application tagging
 
 def login(host, username, password, auth_source=None):
     # Validate password. This will return a token that can be used
@@ -97,7 +102,7 @@ def set_ops_properties(id, group_names):
         "property-content":
             [
                 {
-                    "statKey": "ServiceNow|Tags",
+                    "statKey": TAG_FIELD,
                     "timestamps": [ int(time.time())*1000 ],
                     "values": [group_names]
                 }
@@ -110,7 +115,7 @@ def create_ops_app(name):
         "resourceKey": {
             "name": name,
             "adapterKindKey": "Container",
-            "resourceKindKey": "CMDB Discovered App"
+            "resourceKindKey": GROUP_TYPE
         },
         "autoResolveMembership": True,
         "membershipDefinition": {
@@ -146,6 +151,7 @@ parser.add_argument('-p', '--password', required=True)
 parser.add_argument("-a", '--authsource', required=False)
 parser.add_argument('-c', '--csvfile', required=False)
 parser.add_argument('-U', '--unsafe', required=False, action="store_true")
+parser.add_argument("-l", "--limit", required=False)
 
 args = parser.parse_args()
 
@@ -167,8 +173,8 @@ visited_apps = {}
 with open(filename, "r") as csvfile:
     rdr = csv.reader(csvfile)
     for row in rdr:
-        app = row[1]
-        vm = row[0]
+        app = row[APP_COLUMN_NUMBER]
+        vm = row[VM_COLUMN_NUMBER]
         if not app:
             sys.stderr.write(f"Warning: VM {vm} did not have a tag\n")
             continue
@@ -186,6 +192,9 @@ with open(filename, "r") as csvfile:
 # Tag VMs with application names
 n = 0
 for k, v in vm_to_app.items():
+    if args.limit and n > int(args.limit):
+        sys.stderr.write(f"Virtual machine limit reached. Stopping...\n")
+        break
     set_ops_properties(k, v)
     if n > 0 and n % 10 == 0:
         sys.stderr.write(f"{n} virtual machines updated\n")
@@ -194,7 +203,7 @@ sys.stderr.write(f"{n} virtual machines updated\n")
 
 # Create custom groups as needed
 for app in visited_apps.keys():
-    app_obj = get_resource_by_name("Container", "CMDB Discovered App", app)
+    app_obj = get_resource_by_name("Container", GROUP_TYPE, app)
     if not app_obj:
         create_ops_app(app)
         sys.stderr.write(f"Created group {app}\n")
