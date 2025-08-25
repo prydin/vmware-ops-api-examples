@@ -22,7 +22,7 @@ ssl_context = ssl.create_default_context()
 VM_COLUMN_NUMBER = 0                # The column containing the VM name
 APP_COLUMN_NUMBER = 1               # The column containing the application name
 GROUP_TYPE = "CMDB Discovered App"  # The group type for application grouping
-TAG_FIELD = "ServiceNow|Tags"       # The VN field to use for application tagging
+TAG_FIELD = "ServiceNow|Tags"      # The VN field to use for application tagging
 
 def login(host, username, password, auth_source=None):
     # Validate password. This will return a token that can be used
@@ -128,7 +128,7 @@ def create_ops_app(name):
                         },
                         "propertyConditionRules": [
                                 {
-                                "key": "ServiceNow|Tags",
+                                "key": TAG_FIELD,
                                 "stringValue": "|" + name + "|",
                                 "compareOperator": "CONTAINS"
                             }
