@@ -5,7 +5,7 @@ List virtual machines that have the same MAC address.
 ## Usage
 
 ```
-python getmetric.py [-h] -H HOST -u USER -p PASSWORD [-a AUTHSOURCE] [--unsafe]
+python dup-mac-check.py [-h] -H HOST -u USER -p PASSWORD [-a AUTHSOURCE] [--unsafe]
 ```
 
 ### Arguments
