@@ -1,6 +1,23 @@
 # Import groups
 
-Example of creating custom groups based on a simple CSV file.
+Example of creating custom groups based on patterns in VM names.
+
+As an example, suppose we have a name format on the form "<app code>-<location>-<serial number>". A set of VMs could be
+names as follows:
+
+```text
+app1-ny-0001
+app1-ca-0002
+app1-nj-003
+app2-nj-004
+app2-tx-005
+```
+Let's say we want to create custom groups that look at the letters before the first hyphen. We could write a regexp that 
+handles that like this ```^([^\-]+)-.*``` that would isolate all non-hyphen characters before the first hyphen. Those
+characters would be used to create the group name. The group selection criteria would become e.g. ```^app1-.*```.
+
+This way, we end up with groups that are named based on the application code and has a selection criteria that dynamically
+selects all VMs matching that name.
 
 ## Usage
 
@@ -38,5 +55,5 @@ optional arguments:
 
 ## Example
 ```bash
-python group-from-name.py -H 192.168.1.220 -u admin -h -p secret -f "^[^-]+-[A-Za-z]+" -A "^(.+)-.*" --unsafe
+python group-from-name.py -H vcf-ops.local -u admin -h -p secret -f "^[^-]+-[A-Za-z]+" -A "^(.+)-.*" --unsafe
 ``` 
