@@ -11,5 +11,7 @@ Repository of various useful API examples
 | [vcf-ops-stockquote](https://github.com/prydin/vcf-ops-stockquote) | A minimalistic example using the VCF Ops SDK to monitor stock prices                       |
 | [group-import](group-import)                                       | Demonstrates how to create custom groups from a CSV file                                   |
 | [dup-mac-detect](dup-mac-detect)                                   | Reports VMs with duplicate MAC addresses                                                   |
+| [group-from-name](group-from-name)                                 | Creates groups based on patterns in VM names                                               |
+
 
 
