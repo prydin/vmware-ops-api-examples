@@ -1,0 +1,30 @@
+slo_list:
+  - name: ClusterCPUContention
+    resourceType: CustomComputeResource
+    metric: cpu|capacity_contentionPct
+    threshold: 3
+    operator: gt
+    interval: 5
+    aggregation: MAX
+  - name: HostCPUContention
+    resourceType: HostSystem
+    metric: cpu|capacity_contentionPct
+    threshold: 3
+    operator: gt
+    interval: 5
+    aggregation: MAX
+  - name: VMPUContention
+    resourceType: VirtualMachine
+    metric: cpu|capacity_contentionPct
+    threshold: 3
+    operator: gt
+    interval: 5
+    aggregation: MAX
+  - name: ClusterMemoryContention
+    resourceType: CustomComputeResource
+    metric: mem|host_contentionPct
+    threshold: 3
+    operator: gt
+    interval: 5
+    aggregation: MAX
+
