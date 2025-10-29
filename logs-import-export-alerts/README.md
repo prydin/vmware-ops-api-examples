@@ -1,4 +1,4 @@
-# Import groups
+# Import/export Ops for Logs alerts
 
 Example of how to import/export Ops for Logs alerts.
 
