@@ -12,7 +12,7 @@ The definition of the SLOs are contained in a YAML-based configuration file. See
 ## Usage
 
 ```
-python getmetric.py usage: slo-calc [-h] -H HOST -u USER -p PASSWORD [-a AUTHSOURCE] -c CONFIG [-U]
+python slo-calc.py usage: slo-calc [-h] -H HOST -u USER -p PASSWORD [-a AUTHSOURCE] -c CONFIG [-U]
 ```
 
 ### Arguments
