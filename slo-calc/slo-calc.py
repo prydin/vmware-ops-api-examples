@@ -35,24 +35,6 @@ def login(host, username, password, auth_source=None):
     token = json_data["token"]
     headers["Authorization"] = "vRealizeOpsToken " + token
 
-def get(uri):
-    rq = request.Request(url=url_base + uri, headers=headers)
-    response = request.urlopen(url=rq, context=ssl_context)
-    if response.status != 200:
-        raise Exception("HTTP Status: %d, details: %s" % (response.status, response.read().decode("UTF-8")))
-    return json.loads(response.read().decode("UTF-8"))
-
-def get_streaming(uri, out):
-    rq = request.Request(url=url_base + uri, headers=headers)
-    response = request.urlopen(url=rq, context=ssl_context)
-    if response.status != 200:
-        raise Exception("HTTP Status: %d, details: %s" % (response.status, response.read().decode("UTF-8")))
-    while True:
-        content = response.read(10000)
-        if not content:
-            break
-        out.write(content)
-
 def post(uri, data):
     rq = request.Request(url=url_base + uri, headers=headers)
     response = request.urlopen(url=rq, context=ssl_context, data=json.dumps(data).encode("UTF-8"))
@@ -62,13 +44,6 @@ def post(uri, data):
     if len(content) == 0:
         return None
     return json.loads(content)
-
-def put(uri, data):
-    rq = request.Request(url=url_base + uri, headers=headers, method="PUT")
-    response = request.urlopen(url=rq, context=ssl_context, data=json.dumps(data).encode("UTF-8"))
-    if response.status not in range(200,299):
-        raise Exception("HTTP Status: %d, details: %s" % (response.status, response.read().decode))
-    return json.loads(response.read().decode("UTF-8"))
 
 def get_resources_by_name(adapter_kind, resource_kind, name, page):
     payload = {
@@ -80,14 +55,14 @@ def get_resources_by_name(adapter_kind, resource_kind, name, page):
     resource_response = post(f"/api/resources/query?page={page}&pageSize={PAGESIZE}", payload)
     return resource_response["resourceList"]
 
-def get_metrics(resource_ids, metric_keys, start_time):
+def get_metrics(resource_ids, metric_keys, start_time, interval, rollup):
     payload = {
         "resourceId": resource_ids,
         "statKey": metric_keys,
         "begin": start_time,
-        "rollUpType": "MAX",
+        "rollUpType": rollup,
         "intervalType": "MINUTES",
-        "intervalQuantifier": 5
+        "intervalQuantifier": interval
     }
     return post("/api/resources/stats/query", payload)
 
@@ -97,14 +72,14 @@ def get_metrics(resource_ids, metric_keys, start_time):
 # Parse command arguments
 parser = argparse.ArgumentParser(
     prog='slo-calc',
-    description='Calculates SLO attainment based on a metric limit',
+    description='Calculates SLO attainment based on metric limits',
 )
-parser.add_argument('-H', '--host', required=True)
-parser.add_argument('-u', '--user', required=True)
-parser.add_argument('-p', '--password', required=True)
-parser.add_argument("-a", '--authsource', required=False)
-parser.add_argument("-c", "--config", required=True)
-parser.add_argument('-U', '--unsafe', required=False, action="store_true")
+parser.add_argument('-H', '--host', required=True, help="The address of the VCF Ops host")
+parser.add_argument('-u', '--user', required=True, help="The VCF Ops user")
+parser.add_argument('-p', '--password', required=True, help="The VCF Ops password")
+parser.add_argument("-a", '--authsource', required=False, help="The VCF Ops authentication source. Default is Local")
+parser.add_argument("-c", "--config", required=True, help="Path to the config file")
+parser.add_argument('-U', '--unsafe', required=False, action="store_true", help="Skip certificate checking (this is unsafe!)")
 
 args = parser.parse_args()
 
@@ -131,6 +106,8 @@ for slo in config["slo_list"]:
     threshold = int(slo["threshold"])
     resource_type = slo["resourceType"]
     slo_name = slo["name"]
+    interval = slo["interval"]
+    rollup = slo["rollup"]
     # Discover VMs in chunks of 1000
     page = 0
     while True:
@@ -146,7 +123,7 @@ for slo in config["slo_list"]:
             ids_to_names[r["identifier"]] = r["resourceKey"]["name"]
 
         # Collect metrics
-        metrics = get_metrics(list(ids_to_names.keys()), [metric_name], start_time)
+        metrics = get_metrics(list(ids_to_names.keys()), [metric_name], start_time, interval, rollup)
 
         # Loop through the metrics
         for metric_chunk in metrics["values"]:
@@ -161,6 +138,8 @@ for slo in config["slo_list"]:
                 first_ts = timestamps[0]
                 last_ts = timestamps[len(timestamps)-1]
                 timespan = last_ts - first_ts
+                if timespan == 0:
+                    continue # Avoid division by zero
                 for i, ts in enumerate(timestamps):
                     if (op_lt and data[i] < threshold) or (not op_lt and data[i] > threshold):
                         breaches += 1

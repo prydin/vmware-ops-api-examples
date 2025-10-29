@@ -1,30 +1,30 @@
 slo_list:
-  - name: ClusterCPUContention
-    resourceType: CustomComputeResource
-    metric: cpu|capacity_contentionPct
-    threshold: 3
-    operator: gt
-    interval: 5
-    aggregation: MAX
+  - name: ClusterCPUContention            # Name of SLO
+    resourceType: ClusterComputeResource  # Resource type to check
+    metric: cpu|capacity_contentionPct    # Metric to check
+    threshold: 3                          # Breach threshold
+    operator: gt                          # Comparison type (LT, GT)
+    interval: 5                           # Rollup interval in minutes
+    rollup: MAX                           # Rollup type. (MIN, MAX, AVG)
   - name: HostCPUContention
     resourceType: HostSystem
     metric: cpu|capacity_contentionPct
     threshold: 3
     operator: gt
     interval: 5
-    aggregation: MAX
-  - name: VMPUContention
+    rollup: MAX
+  - name: VMCPUContention
     resourceType: VirtualMachine
     metric: cpu|capacity_contentionPct
     threshold: 3
     operator: gt
     interval: 5
-    aggregation: MAX
+    rollup: MAX
   - name: ClusterMemoryContention
-    resourceType: CustomComputeResource
+    resourceType: ClusterComputeResource
     metric: mem|host_contentionPct
     threshold: 3
     operator: gt
     interval: 5
-    aggregation: MAX
+    rollup: MAX
 

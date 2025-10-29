@@ -12,6 +12,7 @@ Repository of various useful API examples
 | [group-import](group-import)                                       | Demonstrates how to create custom groups from a CSV file                                   |
 | [dup-mac-detect](dup-mac-detect)                                   | Reports VMs with duplicate MAC addresses                                                   |
 | [group-from-name](group-from-name)                                 | Creates groups based on patterns in VM names                                               |
+| [slo-calc](slo-cal)                                                | Calculates SLO attainment scores                                                           |
 
 
 
