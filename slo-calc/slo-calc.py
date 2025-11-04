@@ -79,10 +79,11 @@ parser.add_argument('-u', '--user', required=True, help="The VCF Ops user")
 parser.add_argument('-p', '--password', required=True, help="The VCF Ops password")
 parser.add_argument("-a", '--authsource', required=False, help="The VCF Ops authentication source. Default is Local")
 parser.add_argument("-c", "--config", required=True, help="Path to the config file")
+parser.add_argument("-l", "--lookback", required=False, default="30", help="Kookback period (days)")
 parser.add_argument('-U', '--unsafe', required=False, action="store_true", help="Skip certificate checking (this is unsafe!)")
 
 args = parser.parse_args()
-
+lookback = int(args.lookback)
 # Load configuration
 with open(args.config) as f:
     config = yaml.safe_load(f)
@@ -101,7 +102,7 @@ except URLError as e:
 
 for slo in config["slo_list"]:
     metric_name = slo["metric"]
-    start_time = int(time.time() - 86400 * 30) * 1000
+    start_time = int(time.time() - 86400 * lookback) * 1000
     op_lt = slo["operator"].upper() == "LT"
     threshold = int(slo["threshold"])
     resource_type = slo["resourceType"]
