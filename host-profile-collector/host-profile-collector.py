@@ -1,16 +1,13 @@
 import json
 
-from pyVmomi import vmodl, vim
+from pyVmomi import vim
 from pyVim.connect import SmartConnect
 
 
 import argparse
 import ssl
 import json
-import sys
-import yaml
 import time
-from urllib.error import URLError
 from urllib import request
 
 PAGESIZE = 1000
@@ -72,6 +69,12 @@ def create_resource(adapter_kind, resource_kind, name, keys: dict):
     payload["resourceKey"]["resourceIdentifiers"] = identifiers
     return post(f"/api/resources/adapterkinds/{adapter_kind}", payload)
 
+def add_relationships(id: str, targets: list[str], relationship_type: str):
+    payload = {
+        "uuids": targets
+    }
+    return post(f"/api/resources/{id}/relationships/{relationship_type}", payload)
+
 
 def add_properties(id: str, properties: dict):
     property_list = []
@@ -108,9 +111,29 @@ def add_metrics(id: str, stats: dict):
     return post(f"/api/resources/stats", payload)
 
 
-def query_resource(adapter_kind, resource_kind, query, page = 0):
+def query_resource(query, page = 0):
     resource_response = post(f"/api/resources/query?page={page}&pageSize={PAGESIZE}", query)
     return resource_response["resourceList"]
+
+def create_resource_maybe(adapter_type, resource_type, vc_object, vcenter_id):
+    moid = vc_object._moId
+    unique_key = vcenter_id + ":" + moid
+    query = {
+        "adapterKind": [adapter_type],
+        "resourceKind": [resource_type],
+        "propertyName": "uniqueId",
+        "propertyValue": unique_key
+    }
+    resources = query_resource(query)
+    if len(resources) == 0:
+        resource = create_resource(adapter_type, resource_type, vc_object.name,
+                                   {"moid": moid, "vcenterUuid": vcenter_id})
+        resource_id = resource["identifier"]
+        print(add_properties(resource_id, {"uniqueId": unique_key, "vcenter": vcenter_id}))
+    else:
+        resource_id = resources[0]["identifier"]
+    return resource_id
+
 
 
 parser = argparse.ArgumentParser(
@@ -153,53 +176,42 @@ profiles = hp_manager.profile
 host_view = content.viewManager.CreateContainerView(content.rootFolder,
                                                         [vim.HostSystem],
                                                         True)
+
 for profile in profiles:
     print(profile, profile.name, profile.validationState, profile.validationFailureInfo, profile._moId, profile.referenceHost, profile.entity)
 
-    # Check if the resource exists and create it if it doesn't.
-    unique_key = vcenter_id + ":" + profile._moId
-    query = {
-        "propertyName": "uniqueId",
-        "propertyValue": unique_key
-    }
-    resources = query_resource("HostProfileAdapter", "HostProfile", query)
-    if len(resources) == 0:
-        resource = create_resource("HostProfileAdapter", "HostProfile", profile.name,
-                        {"moid": profile._moId, "vcenterUuid": vcenter_id})
-        resource_id = resource["identifier"]
-        print(add_properties(resource_id, { "uniqueId": unique_key, "vcenter": args.vchost}))
-    else:
-        resource_id = resources[0]["identifier"]
-    add_metrics(resource_id, {"validationStatus": profile.validationState})
+    # Creat4e host profile if needed
+    profile_id = create_resource_maybe("HostProfileAdapter", "HostProfile", profile, vcenter_id)
 
-    # Iterate over associated hosts
+    # Link host profile to vCenter
+    vcenters = query_resource({"adapterKind": ["VMWARE"], "resourceKind": ["vCenter"], "propertyName": "summary|vcuuid", "propertyValue": vcenter_id})
+    if len(vcenters) == 1:
+        add_relationships(profile_id, [vcenters[0]["identifier"]], "parents")
 
-    #result = compliance_manager.CheckCompliance([profile], profile.entity)
-    #print(result)
+    # Record host compliance status
+    noncompliant_hosts = 0
     for host in profile.entity:
-        print(host.complianceCheckResult.complianceStatus, host.complianceCheckResult.checkTime, len(host.complianceCheckResult.failure), host.value, host.config, dir(host))
-        unique_key = vcenter_id + ":" + host._GetMoId()
-        query = {
-            "propertyName": "uniqueId",
-            "propertyValue": unique_key
-        }
-        resources = query_resource("HostProfileAdapter", "HostCompliance", query)
-        if len(resources) == 0:
-            resource = create_resource("HostProfileAdapter", "HostCompliance", host.name,
-                                       {"moid": host._GetMoId(), "vcenterUuid": vcenter_id})
-            resource_id = resource["identifier"]
-            print(add_properties(resource_id, {"uniqueId": unique_key }))
-        else:
-            resource_id = resources[0]["identifier"]
+        if not isinstance(host, vim.HostSystem):
+            continue # Skip clusters for now
+        # Record host profile metrics
+        resource_id = create_resource_maybe("HostProfileAdapter", "HostCompliance", host, vcenter_id)
         cc_result = host.complianceCheckResult
-        add_metrics(resource_id, {"complianceStatus": cc_result.complianceStatus, "lastCheck": str(cc_result.checkTime)})
+        if host.complianceCheckResult.complianceStatus == "nonCompliant":
+            noncompliant_hosts += 1
+        time_since_last_check = int((time.time() - cc_result.checkTime.timestamp()) / 8640) / 10
+        stats = {
+            "complianceStatus": cc_result.complianceStatus,
+            "lastCheck": str(cc_result.checkTime),
+            "timeSinceLastCheck": time_since_last_check,
+            "failures": len(cc_result.failure)}
+        add_metrics(resource_id, stats)
 
-        # validation = hp_manager.RetrieveCompliance(host=[host])
+        # Link HostCompliance to host
+        ops_hosts = query_resource({"adapterKind": ["VMWARE"], "resourceKind": ["HostSystem"], "name": [host.name]})
+        if len(ops_hosts) == 0:
+            continue
+        add_relationships(resource_id, [ops_hosts[0]["identifier"], profile_id], "parents")
+    add_metrics(profile_id, {"validationStatus": profile.validationState, "nonCompliantHosts": noncompliant_hosts})
 
-    #print(profile.name, profile.host, profile.fautls, profile.failures)
 
 host_view.Destroy()
-
-
-
-
