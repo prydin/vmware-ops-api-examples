@@ -1,0 +1,6 @@
+{
+    "container_push_repository": null,
+    "container_repository": "docker.io/prydin/slo-management-pack",
+    "default_memory_limit": 1024,
+    "use_default_registry": false
+}
