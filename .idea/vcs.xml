@@ -3,5 +3,6 @@
   <component name="VcsDirectoryMappings">
     <mapping directory="$PROJECT_DIR$" vcs="Git" />
     <mapping directory="$PROJECT_DIR$/host-profile-collector-mp" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/slo-calc-mp" vcs="Git" />
   </component>
 </project>

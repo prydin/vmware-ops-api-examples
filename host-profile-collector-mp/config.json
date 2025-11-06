@@ -1,0 +1,6 @@
+{
+    "container_push_repository": null,
+    "container_repository": "docker.io/prydin/host-profile-collectorhostprofiles",
+    "default_memory_limit": 1024,
+    "use_default_registry": false
+}
