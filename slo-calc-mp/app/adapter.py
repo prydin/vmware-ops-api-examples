@@ -32,90 +32,98 @@ def get_adapter_definition() -> AdapterDefinition:
     :return: AdapterDefinition
     """
     with Timer(logger, "Get Adapter Definition"):
-        definition = AdapterDefinition(ADAPTER_KIND, ADAPTER_NAME)
-        for i in range(1, MAX_SLOS + 1):
-            definition.define_string_parameter(
-                key=f"sloName{i}",
-                label="SLO Name",
-                description="SLO Name",
-                required=i == 1,
-            )
+        try:
+            definition = AdapterDefinition(ADAPTER_KIND, ADAPTER_NAME)
+            for i in range(1, MAX_SLOS + 1):
+                definition.define_string_parameter(
+                    key=f"sloName{i}",
+                    label="SLO Name",
+                    description="SLO Name",
+                    required=i == 1,
+                )
 
-            definition.define_string_parameter(
-                key=f"sloResourceType{i}",
-                label="SLO Resource Type",
-                description="Resource type the SLO will act on",
-                required=i == 1,
-            )
+                definition.define_string_parameter(
+                    key=f"sloResourceType{i}",
+                    label="SLO Resource Type",
+                    description="Resource type the SLO will act on",
+                    required=i == 1,
+                )
 
-            definition.define_string_parameter(
-                key=f"sloMetric{i}",
-                label="SLO Metric",
-                description="Metric the SLO will act on",
-                required=i == 1,
-            )
+                definition.define_string_parameter(
+                    key=f"sloMetric{i}",
+                    label="SLO Metric",
+                    description="Metric the SLO will act on",
+                    required=i == 1,
+                )
 
+                definition.define_int_parameter(
+                    key=f"sloThreshold{i}",
+                    label="SLO Threshold",
+                    description="Threshold value for the SLO",
+                    required=i == 1,
+                )
+
+                definition.define_enum_parameter(
+                    key=f"sloCondition{i}",
+                    label="SLO Condition",
+                    description="Condition for the SLO threshold (Above/Below)",
+                    required=i == 1,
+                    values=["Above", "Below"],
+                    default="Above",
+                )
+
+                definition.define_int_parameter(
+                    f"sloLookbackPeriod{i}",
+                    label="SLO Lookback Period (Days)",
+                    description="Number of days to look back when calculating SLO attainment",
+                    required=i == 1,
+                    default=30,
+                )
+
+                definition.define_int_parameter(
+                    f"rollupInterval{i}",
+                    label="SLO Rollup Interval (Minutes)",
+                    description="Interval in minutes at which to roll up the SLO",
+                    required=i == 1,
+                    default=5,
+                )
+
+                definition.define_enum_parameter(
+                    key=f"sloRollupType{i}",
+                    label="SLO Rollup Type",
+                    description="Type of rollup to perform for the SLO",
+                    values=["AVG", "MIN", "MAX", "SUM"],
+                    default="AVG",
+                    required=i == 1,
+                )
+
+            # The key 'container_memory_limit' is a special key that is read by the VMware Aria Operations collector to
+            # determine how much memory to allocate to the docker container running this adapter. It does not
+            # need to be read inside the adapter code.
             definition.define_int_parameter(
-                key=f"sloThreshold{i}",
-                label="SLO Threshold",
-                description="Threshold value for the SLO",
-                required=i == 1,
+                "container_memory_limit",
+                label="Adapter Memory Limit (MB)",
+                description="Sets the maximum amount of memory VMware Aria Operations can "
+                "allocate to the container running this adapter instance.",
+                required=True,
+                advanced=True,
+                default=1024,
             )
 
-            definition.define_enum_parameter(
-                key=f"sloCondition{i}",
-                label="SLO Condition",
-                description="Condition for the SLO threshold (Above/Below)",
-                required=i == 1,
-                values=["Above", "Below"],
-                default="Above",
-            )
+            slo = definition.define_object_type("SLO", "SLO")
+            slo.define_metric("score", "SLO Attainment Score", Units.TIME.SECONDS)
+            slo.define_string_property("resourceType", "Resource Type")
+            slo.define_string_property("metricName", "Metric Name")
 
-            definition.define_int_parameter(
-                f"sloLookbackPeriod{i}",
-                label="SLO Lookback Period (Days)",
-                description="Number of days to look back when calculating SLO attainment",
-                required=i == 1,
-                default=30,
-            )
-
-            definition.define_int_parameter(
-                f"rollupInterval{i}",
-                label="SLO Rollup Interval (Minutes)",
-                description="Interval in minutes at which to roll up the SLO",
-                required=i == 1,
-                default=5,
-            )
-
-            definition.define_enum_parameter(
-                key=f"sloRollupType{i}",
-                label="SLO Rollup Type",
-                description="Type of rollup to perform for the SLO",
-                values=["AVG", "MIN", "MAX", "SUM"],
-                default="AVG",
-                required=i == 1,
-            )
-
-        # The key 'container_memory_limit' is a special key that is read by the VMware Aria Operations collector to
-        # determine how much memory to allocate to the docker container running this adapter. It does not
-        # need to be read inside the adapter code.
-        definition.define_int_parameter(
-            "container_memory_limit",
-            label="Adapter Memory Limit (MB)",
-            description="Sets the maximum amount of memory VMware Aria Operations can "
-            "allocate to the container running this adapter instance.",
-            required=True,
-            advanced=True,
-            default=1024,
-        )
-
-        slo = definition.define_object_type("SLO", "SLO")
-        slo.define_metric("score", "SLO Attainment Score", Units.TIME.SECONDS)
-        slo.define_string_property("resourceType", "Resource Type")
-        slo.define_string_property("metricName", "Metric Name")
-        slo.define_string_property("resourceName", "Resource Name")
-        logger.debug(f"Returning adapter definition: {definition.to_json()}")
-        return definition
+            slo_attainment = definition.define_object_type("SLOAttainment", "SLO Attainment")
+            slo_attainment.define_string_property("resourceName", "Resource Name")
+            slo_attainment.define_metric("score", "SLO Score", Units.RATIO.PERCENT)
+            logger.debug(f"Returning adapter definition: {definition.to_json()}")
+            return definition
+        except Exception as e:
+            logger.error("Unexpected adapter definition error")
+            logger.exception(e)
+            raise
 
 
 def test(adapter_instance: AdapterInstance) -> TestResult:
@@ -156,6 +164,13 @@ def collect(adapter_instance: AdapterInstance) -> CollectResult:
                 if not slo_name:
                     continue  # No more SLOs configured
 
+                # Create SLO resource
+                slo = result.object(ADAPTER_KIND, "SLO", f"{slo_name}")
+                resource_type_property = Property("resourceType", resource_type)
+                metric_name_property = Property("metricName", metric_name)
+                slo.add_property(resource_type_property)
+                slo.add_property(metric_name_property)
+
                 op_below = condition.upper() == "BELOW"
                 start_time = int(time.time() - 86400 * lookback) * 1000
 
@@ -170,13 +185,12 @@ def collect(adapter_instance: AdapterInstance) -> CollectResult:
                         logger.error(f"Failed to query resources: {response.status_code} {response.text}")
                         continue
                     resources = response.json().get("resourceList", [])
-                logger.info("***** Resource query returned: %s", resources)
                 if len(resources) == 0:
                     logger.warning(f"No resources found for type {resource_type}")
                     continue # TODO: Pagination if needed
                 ids_to_names = {r["identifier"]: r["resourceKey"]["name"] for r in resources if
                                 "identifier" in r and "resourceKey" in r}
-                logger.info(f"Found {len(ids_to_names)} resources of type {resource_type}")
+                logger.debug(f"Found {len(ids_to_names)} resources of type {resource_type}")
 
                 # TODO: Implement pagination if needed
                 query = {
@@ -198,7 +212,9 @@ def collect(adapter_instance: AdapterInstance) -> CollectResult:
                 for metric_chunk in metrics.get("values", []):
                     resource_id = metric_chunk.get("resourceId")
                     name = ids_to_names.get(resource_id, resource_id)
-                    slo = result.object(ADAPTER_KIND, "SLO", f"{slo_name}/{name}")
+                    slo_attainment = result.object(ADAPTER_KIND, "SLOAttainment", f"{slo_name}/{name}")
+                    slo.add_child(slo_attainment)
+
                     breaches = 0
                     metric_list = metric_chunk.get("stat-list", {}).get("stat", [])
 
@@ -223,15 +239,10 @@ def collect(adapter_instance: AdapterInstance) -> CollectResult:
                                     1.0 - (breaches / total_intervals)) if total_intervals > 0 else 0.0
                         logger.debug(f"{name},{slo_name},{attainment:.2f}")
                         slo_score = Metric("score", attainment)  # Replace with actual calculation
-                        slo.add_metric(slo_score)
+                        slo_attainment.add_metric(slo_score)
 
-                    resource_type_property = Property("resourceType", resource_type)
-                    metric_name_property = Property("metricName", metric_name)
                     resource_name_property = Property("resourceName", name)
-
-                    slo.add_property(resource_type_property)
-                    slo.add_property(metric_name_property)
-                    slo.add_property(resource_name_property)
+                    slo_attainment.add_property(resource_name_property)
         except Exception as e:
             logger.error("Unexpected collection error")
             logger.exception(e)
