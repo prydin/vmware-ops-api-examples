@@ -211,14 +211,16 @@ host_view = content.viewManager.CreateContainerView(content.rootFolder, [vim.Hos
 for profile in profiles:
     logger.debug("Processing profile: %s (%s)", getattr(profile, "name", "<no-name>"), getattr(profile, "_moId", "<no-moid>"))
     profile_id = create_resource_maybe("HostProfileAdapter", "HostProfile", profile, vcenter_id)
+    add_properties(profile_id, {"vcenterName": args.vchost})
 
     vcenters = query_resource({
         "adapterKind": ["VMWARE"],
         "resourceKind": ["vCenter"],
-        "propertyName": "summary|vcuuid",
-        "propertyValue": vcenter_id
+        #"propertyName": "summary|vcuuid",
+        #"propertyValue": vcenter_id
     })
     if vcenters:
+        logger.debug("Linking profile to vCenter: %s", vcenters[0]["resourceKey"]["name"])
         add_relationships(profile_id, [vcenters[0]["identifier"]], "parents")
 
     noncompliant_hosts = 0
