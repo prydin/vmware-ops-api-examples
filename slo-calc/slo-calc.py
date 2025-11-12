@@ -15,6 +15,15 @@ ssl_context = ssl.create_default_context()
 
 
 def _read_response(response):
+    """
+    Reads the HTTP response and extracts the status code and content.
+
+    Args:
+        response: The HTTP response object.
+
+    Returns:
+        tuple: A tuple containing the HTTP status code and the response content as a string.
+    """
     code = getattr(response, "status", None)
     if code is None:
         try:
@@ -27,6 +36,18 @@ def _read_response(response):
 
 
 def login(host, username, password, auth_source=None):
+    """
+    Authenticates with the vRealize Operations API and retrieves a session token.
+
+    Args:
+        host (str): The vRealize Operations host.
+        username (str): The username for authentication.
+        password (str): The password for authentication.
+        auth_source (str, optional): The authentication source. Defaults to None.
+
+    Raises:
+        SystemExit: If authentication fails or the response does not contain a token.
+    """
     global url_base
     url_base = f"https://{host}/suite-api"
     cred_payload = {"username": username, "password": password}
@@ -51,6 +72,19 @@ def login(host, username, password, auth_source=None):
 
 
 def post(uri, data):
+    """
+    Sends a POST request to the vRealize Operations API.
+
+    Args:
+        uri (str): The API endpoint URI.
+        data (dict): The payload to send in the POST request.
+
+    Returns:
+        dict: The JSON-decoded response from the API.
+
+    Raises:
+        Exception: If the HTTP request fails or returns a non-2xx status code.
+    """
     payload = json.dumps(data).encode("utf-8")
     rq = request.Request(url_base + uri, data=payload, headers=headers, method="POST")
     try:
@@ -68,6 +102,18 @@ def post(uri, data):
 
 
 def get_resources_by_name(adapter_kind, resource_kind, name, page):
+    """
+    Queries resources by name from the vRealize Operations API.
+
+    Args:
+        adapter_kind (str): The adapter kind key.
+        resource_kind (str): The resource kind key.
+        name (str): The name of the resource to query. If None, all resources are queried.
+        page (int): The page number for pagination.
+
+    Returns:
+        list: A list of resources matching the query.
+    """
     payload = {
         "adapterKind": [adapter_kind],
         "resourceKind": [resource_kind],
@@ -79,6 +125,19 @@ def get_resources_by_name(adapter_kind, resource_kind, name, page):
 
 
 def get_metrics(resource_ids, metric_keys, start_time, interval, rollup):
+    """
+    Retrieves metrics for the specified resources from the vRealize Operations API.
+
+    Args:
+        resource_ids (list): A list of resource IDs to query metrics for.
+        metric_keys (list): A list of metric keys to retrieve.
+        start_time (int): The start time for the metric query (in milliseconds since epoch).
+        interval (int): The interval quantifier for the metrics (in minutes).
+        rollup (str): The rollup type for the metrics (e.g., "AVG", "SUM").
+
+    Returns:
+        dict: The JSON-decoded response containing the metrics.
+    """
     payload = {
         "resourceId": resource_ids,
         "statKey": metric_keys,
@@ -91,6 +150,11 @@ def get_metrics(resource_ids, metric_keys, start_time, interval, rollup):
 
 
 def main():
+    """
+    Main function to calculate SLO attainment based on metric limits.
+
+    Parses command-line arguments, reads the configuration file, and processes SLOs.
+    """
     parser = argparse.ArgumentParser(prog="slo-calc", description="Calculates SLO attainment based on metric limits")
     parser.add_argument("-H", "--host", required=True, help="The address of the VCF Ops host")
     parser.add_argument("-u", "--user", required=True, help="The VCF Ops user")
