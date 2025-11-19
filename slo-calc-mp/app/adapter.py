@@ -198,16 +198,8 @@ def collect(adapter_instance: AdapterInstance) -> CollectResult:
                 now = datetime.now()
 
                 slo_type = adapter_instance.get_identifier_value(f"sloType{i}")
-                if slo_type == "Monthly":
-                    start_time = int(datetime(now.year, 1, 1).timestamp() * 1000)
-                    slo_length = 30 * 86400
-                elif slo_type == "Quarterly":
-                    start_time = int(datetime(now.year, ((now.month - 1) // 3) * 3 + 1, 1).timestamp() * 1000)
-                    slo_length = 90 * 86400
-                else:
-                    start_time = int(time.time() - 86400 * lookback) * 1000
-                    slo_length = lookback * 60 * 60 * 24
-                logger.debug(f"SLO {slo_name}: start_time={start_time}")
+                slo_length, start_time = slo_type_to_times(lookback, now, slo_type)
+                logger.debug(f"SLO {slo_name}: start_time={start_time}, slo_length={slo_length}")
 
                 # Calculate the error budget
                 error_budget_seconds = slo_length * (1.0-(slo / 10000.0))
@@ -230,11 +222,10 @@ def collect(adapter_instance: AdapterInstance) -> CollectResult:
                     "resourceKind": [resource_type],
                 }
                 logger.debug("Querying for resources: %s", json.dumps(query))
-                with ops_client.post("/api/resources/query", json=query) as response:
-                    if response.status_code != 200:
-                        logger.error(f"Failed to query resources: {response.status_code} {response.text}")
-                        continue
-                    resources = response.json().get("resourceList", [])
+                result = ops_post(ops_client, "/api/resources/query", query)
+                if not result:
+                    continue
+                resources = result.get("resourceList", [])
                 if len(resources) == 0:
                     logger.warning(f"No resources found for type {resource_type}")
                     continue # TODO: Pagination if needed
@@ -259,11 +250,7 @@ def collect(adapter_instance: AdapterInstance) -> CollectResult:
                     "intervalType": "MINUTES",
                     "intervalQuantifier": interval,
                 }
-                with ops_client.post("/api/resources/stats/query", json=query) as response:
-                    if response.status_code != 200:
-                        logger.error(f"Failed to retrieve metrics: {response.status_code} {response.text}")
-                        continue
-                    metrics = response.json()
+                metrics = ops_post(ops_client, "/api/resources/stats/query", json=query)
                 if not metrics or "values" not in metrics:
                     continue
 
@@ -297,6 +284,8 @@ def collect(adapter_instance: AdapterInstance) -> CollectResult:
                             logger.debug(f"Evaluating value {value} against threshold {threshold}")
                             if (op_below and value < threshold) or (not op_below and value > threshold):
                                 breaches += 1
+
+                        # Calculate metrics and add them to the result
                         total_intervals = timespan / (interval * 60000.0)
                         attainment = 100.0 * (
                                     1.0 - (breaches / total_intervals)) if total_intervals > 0 else 0.0
@@ -326,6 +315,26 @@ def collect(adapter_instance: AdapterInstance) -> CollectResult:
             # TODO: If any connections are still open, make sure they are closed before returning
             logger.debug(f"Returning collection result {result.get_json()}")
             return result
+
+
+def slo_type_to_times(lookback, now, slo_type):
+    if slo_type == "Monthly":
+        start_time = int(datetime(now.year, 1, 1).timestamp() * 1000)
+        slo_length = 30 * 86400
+    elif slo_type == "Quarterly":
+        start_time = int(datetime(now.year, ((now.month - 1) // 3) * 3 + 1, 1).timestamp() * 1000)
+        slo_length = 90 * 86400
+    else:
+        start_time = int(time.time() - 86400 * lookback) * 1000
+        slo_length = lookback * 60 * 60 * 24
+    return slo_length, start_time
+
+def ops_post(client, path, json):
+    with client.post("/api/resources/stats/query", json=json) as response:
+        if response.status_code != 200:
+            logger.error(f"Failed to retrieve metrics: {response.status_code} {response.text}")
+            return None
+        return response.json()
 
 
 def get_endpoints(adapter_instance: AdapterInstance) -> EndpointResult:

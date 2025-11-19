@@ -218,18 +218,24 @@ def main():
                     data = metric.get("data", [])
                     if not timestamps or not data or len(timestamps) != len(data):
                         continue
+
+                    # Calculate the timespan of the metrics returned. This may not always
+                    # match the requested lookback period due to data availability.
                     first_ts = timestamps[0]
                     last_ts = timestamps[-1]
                     timespan = last_ts - first_ts
                     if timespan <= 0:
                         continue
-                    for i, ts in enumerate(timestamps):
-                        value = data[i]
+
+                    # Check each datapoint against the threshold and count breaches
+                    for value in data:
                         if value is None:
                             continue
                         if (op_lt and value < threshold) or (not op_lt and value > threshold):
                             breaches += 1
-                    total_intervals = timespan / 300000.0
+                    # Calculate attainment percentage by dividing the number of breaches
+                    # by the total number of intervals in the timespan.
+                    total_intervals = timespan / (interval  * 60000.0)
                     attainment = 100.0 * (1.0 - (breaches / total_intervals)) if total_intervals > 0 else 0.0
                     print(f"{name},{slo_name},{attainment:.2f}")
 
