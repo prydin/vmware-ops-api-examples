@@ -194,7 +194,7 @@ def collect(adapter_instance: AdapterInstance) -> CollectResult:
                 interval = int(adapter_instance.get_identifier_value(f"rollupInterval{i}"))
                 slo = int(adapter_instance.get_identifier_value(f"slo{i}"))
 
-                # Calculate start times for different SLO periods
+                # Calculate start times for different SLO periods 
                 now = datetime.now()
 
                 slo_type = adapter_instance.get_identifier_value(f"sloType{i}")
