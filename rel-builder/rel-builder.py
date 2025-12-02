@@ -212,11 +212,9 @@ def add_relation(source_id, target_id, relation_type):
 
 def main():
     """
-    Main function to calculate SLO attainment based on metric limits.
-
-    Parses command-line arguments, reads the configuration file, and processes SLOs.
+    Main function to build relationships between resources based on properties.
     """
-    parser = argparse.ArgumentParser(prog="slo-calc", description="Calculates SLO attainment based on metric limits")
+    parser = argparse.ArgumentParser(prog="rel-builder", description="Builds relationships between resources based on properties")
     parser.add_argument("-H", "--host", required=True, help="The address of the VCF Ops host")
     parser.add_argument("-u", "--user", required=True, help="The VCF Ops user")
     parser.add_argument("-p", "--password", required=True, help="The VCF Ops password")
@@ -225,7 +223,8 @@ def main():
     parser.add_argument("--sourcekind", required=True, help="Resource kind of source")
     parser.add_argument("--targetkind", required=True, help="Resource kind of target")
     parser.add_argument("--property", required=True, help="Property used for linking")
-    parser.add_argument("--regexp", required=True, help="Name extraction regular expression")
+    parser.add_argument("--matchre", required=False, help="Name matching regular expression")
+    parser.add_argument("--extractre", required=False, help="Name extraction regular expression")
     parser.add_argument("--ignorecase", required=False, action="store_true", help="Ignore case in name matching")
     parser.add_argument("-U", "--unsafe", required=False, action="store_true", help="Skip certificate checking (this is unsafe!)")
 
@@ -268,6 +267,15 @@ def main():
             prop_value = prop_values.get(args.property, None)
             if not prop_value:
                 continue
+
+            # Extract value using regexp
+            if args.extractre:
+                pattern = re.compile(args.extractre)
+                match = pattern.match(prop_value)
+                if not match:
+                    print(f"Source resource {id} property {args.property}='{prop_value}' does not match extraction regexp")
+                    continue
+                prop_value = match.group(1)
             targets = get_resources_by_name(
                 target_adapter,
                 target_kind,
@@ -275,9 +283,10 @@ def main():
                 0
             )
             # Filter targets by regexp
-            regexp = args.regexp.replace("${}", prop_value)
-            pattern = re.compile(regexp, re.IGNORECASE if args.ignorecase else 0)
-            targets = [t for t in targets if pattern.match(t["resourceKey"]["name"])]
+            if args.matchre:
+                regexp = args.matchre.replace("{}", prop_value)
+                pattern = re.compile(regexp, re.IGNORECASE if args.ignorecase else 0)
+                targets = [t for t in targets if pattern.match(t["resourceKey"]["name"])]
 
             if len(targets) == 0:
                 print(f"Source resource {id} property {args.property}='{prop_value}' has no matching target resource")
