@@ -43,5 +43,7 @@ The relationship type to create is CHILD.
 The {} in the matchre argument is replaced with the extracted name.
 
 ```commandline
-python rel-builder.py -H ops.example.com -u admin -p secret -U --sourcekind Test:BladeServer --targetkind HostSystem --extractre "(.*)\.example.com" --matchre "my-host-{}" --property esx --reltype CHILD 
+python rel-builder.py -H ops.example.com -u admin -p secret -U --sourcekind Test:BladeServer \
+   --targetkind HostSystem --extractre "(.*)\.example.com" --matchre "my-host-{}" \
+   --property esx --reltype CHILD 
 ```
