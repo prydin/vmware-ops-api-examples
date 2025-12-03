@@ -100,6 +100,51 @@ def post(uri, data):
     return json.loads(text)
 
 
+def put(uri, data):
+    """
+    Sends a PUT request to the vRealize Operations API.
+
+    Args:
+        uri (str): The API endpoint URI.
+        data (dict): The payload to send in the POST request.
+
+    Returns:
+        dict: The JSON-decoded response from the API.
+
+    Raises:
+        Exception: If the HTTP request fails or returns a non-2xx status code.
+    """
+    payload = json.dumps(data).encode("utf-8")
+    rq = request.Request(url_base + uri, data=payload, headers=headers, method="PUT")
+    try:
+        response = request.urlopen(rq, context=ssl_context)
+    except HTTPError as e:
+        body = e.read().decode() if hasattr(e, "read") else ""
+        raise Exception(f"HTTP Error: {e.code}, details: {body}") from e
+
+    code, text = _read_response(response)
+    if not (200 <= (code or 0) < 300):
+        raise Exception(f"HTTP Status: {code}, details: {text}")
+    if not text:
+        return None
+    return json.loads(text)
+
+
+def get(uri):
+    rq = request.Request(url=url_base + uri, headers=headers)
+    response = request.urlopen(url=rq, context=ssl_context)
+    if response.status != 200:
+        raise Exception("HTTP Status: %d, details: %s" % (response.status, response.read().decode("UTF-8")))
+    return json.loads(response.read().decode("UTF-8"))
+
+
+def delete(uri):
+    rq = request.Request(url=url_base + uri, headers=headers, method="DELETE")
+    response = request.urlopen(url=rq, context=ssl_context)
+    if response.status not in range(200, 299):
+        raise Exception("HTTP Status: %d, details: %s" % (response.status, response.read().decode("UTF-8")))
+
+
 def get_properties_bulk(ids, props):
     payload = {
         "resourceIds": ids,
@@ -168,29 +213,32 @@ def get_resources_by_name(adapter_kind, resource_kind, name, page):
     return resource_response.get("resourceList", [])
 
 
-def get_metrics(resource_ids, metric_keys, start_time, interval, rollup):
+def get_relations(resource_id, relation_type, target_kind=None):
     """
-    Retrieves metrics for the specified resources from the vRealize Operations API.
+    Retrieves relations of a specified type for a given resource.
 
     Args:
-        resource_ids (list): A list of resource IDs to query metrics for.
-        metric_keys (list): A list of metric keys to retrieve.
-        start_time (int): The start time for the metric query (in milliseconds since epoch).
-        interval (int): The interval quantifier for the metrics (in minutes).
-        rollup (str): The rollup type for the metrics (e.g., "AVG", "SUM").
-
+        resource_id (str): The identifier of the source resource.
+        target_kind (str): The kind of the target resource.
+        relation_type (str): The type of relation to retrieve.
     Returns:
-        dict: The JSON-decoded response containing the metrics.
+        dict: The JSON-decoded response from the API.
     """
-    payload = {
-        "resourceId": resource_ids,
-        "statKey": metric_keys,
-        "begin": start_time,
-        "rollUpType": rollup,
-        "intervalType": "MINUTES",
-        "intervalQuantifier": interval,
-    }
-    return post("/api/resources/stats/query", payload)
+    result = get(f"/api/resources/{resource_id}/relationships/{relation_type}")
+    return result
+
+
+def delete_relation(source_id, target_id, relation_type):
+    """
+    Deletes a relation between two resources in vRealize Operations.
+
+    Args:
+        source_id (str): The identifier of the source resource.
+        target_id (str): The identifier of the target resource.
+        relation_type (str): The type of relation to delete.
+    """
+    delete(f"/api/resources/{source_id}/relationships/{relation_type}/{target_id}")
+
 
 def add_relation(source_id, target_id, relation_type):
     """
@@ -214,11 +262,13 @@ def main():
     """
     Main function to build relationships between resources based on properties.
     """
-    parser = argparse.ArgumentParser(prog="rel-builder", description="Builds relationships between resources based on properties")
+    parser = argparse.ArgumentParser(prog="rel-builder",
+                                     description="Builds relationships between resources based on properties")
     parser.add_argument("-H", "--host", required=True, help="The address of the VCF Ops host")
     parser.add_argument("-u", "--user", required=True, help="The VCF Ops user")
     parser.add_argument("-p", "--password", required=True, help="The VCF Ops password")
-    parser.add_argument("-a", "--authsource", required=False, help="The VCF Ops authentication source. Default is Local")
+    parser.add_argument("-a", "--authsource", required=False,
+                        help="The VCF Ops authentication source. Default is Local")
     parser.add_argument("--reltype", required=True, help="Relation type to create")
     parser.add_argument("--sourcekind", required=True, help="Resource kind of source")
     parser.add_argument("--targetkind", required=True, help="Resource kind of target")
@@ -226,7 +276,10 @@ def main():
     parser.add_argument("--matchre", required=False, help="Name matching regular expression")
     parser.add_argument("--extractre", required=False, help="Name extraction regular expression")
     parser.add_argument("--ignorecase", required=False, action="store_true", help="Ignore case in name matching")
-    parser.add_argument("-U", "--unsafe", required=False, action="store_true", help="Skip certificate checking (this is unsafe!)")
+    parser.add_argument("--delete", required=False, action="store_true", default=False,
+                        help="Allow deletion of old relationships")
+    parser.add_argument("-U", "--unsafe", required=False, action="store_true",
+                        help="Skip certificate checking (this is unsafe!)")
 
     args = parser.parse_args()
 
@@ -239,7 +292,8 @@ def main():
         login(args.host, args.user, args.password, args.authsource)
     except URLError as e:
         if "certificate" in str(e).lower():
-            sys.stderr.write("The server appears to have a self-signed certificate. Override by adding the --unsafe option (not recommended in production)\n")
+            sys.stderr.write(
+                "The server appears to have a self-signed certificate. Override by adding the --unsafe option (not recommended in production)\n")
             sys.exit(1)
         else:
             raise
@@ -259,11 +313,14 @@ def main():
         resources = get_resources(source_adapter, source_kind, page)
         if not resources or len(resources) == 0:
             break
-        properties = get_properties_bulk(
-            [r["identifier"] for r in resources],
-            [args.property]
-        )
+        ids = [r["identifier"] for r in resources]
+        properties = get_properties_bulk(ids, [args.property])
         for id, prop_values in properties.items():
+            relations = get_relations(id, args.reltype)
+            our_relations = {r["identifier"]: True for r in relations.get("resourceList", []) if
+                             r["resourceKey"]["resourceKindKey"] == target_kind and r["resourceKey"][
+                                 "adapterKindKey"] == target_adapter}
+
             prop_value = prop_values.get(args.property, None)
             if not prop_value:
                 continue
@@ -273,7 +330,8 @@ def main():
                 pattern = re.compile(args.extractre)
                 match = pattern.match(prop_value)
                 if not match:
-                    print(f"Source resource {id} property {args.property}='{prop_value}' does not match extraction regexp")
+                    print(
+                        f"Source resource {id} property {args.property}='{prop_value}' does not match extraction regexp")
                     continue
                 prop_value = match.group(1)
             targets = get_resources_by_name(
@@ -288,16 +346,21 @@ def main():
                 pattern = re.compile(regexp, re.IGNORECASE if args.ignorecase else 0)
                 targets = [t for t in targets if pattern.match(t["resourceKey"]["name"])]
 
-            if len(targets) == 0:
-                print(f"Source resource {id} property {args.property}='{prop_value}' has no matching target resource")
-                continue
-            elif len(targets) > 1:
-                print(f"Source resource {id} property {args.property}='{prop_value}' has multiple matching target resources")
-                continue
-            target = targets[0]
-            print(f"Source resource {id} property {args.property}='{prop_value}' maps to target resource {target['identifier']}")
-            add_relation(id, target["identifier"], args.reltype)
+            for t in targets:
+                target_id = t["identifier"]
+                if target_id in our_relations:
+                    del our_relations[target_id]
+                    continue
+                add_relation(id, target_id, args.reltype)
+                print(f"Added relation {args.reltype} from {id} to {target_id}")
+
+            # Deal with deleted relations
+            if args.delete:
+                for old_rel in our_relations.keys():
+                    print(f"Removing relation {args.reltype} from {id} to {old_rel}")
+                    delete_relation(id, old_rel, args.reltype)
         page += 1
+
 
 if __name__ == "__main__":
     main()

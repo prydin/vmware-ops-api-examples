@@ -32,6 +32,7 @@ options:
   --extractre EXTRACTRE
                         Name extraction regular expression
   --ignorecase          Ignore case in name matching
+  --delete              Allow deletion of old relationships
   -U, --unsafe          Skip certificate checking (this is unsafe!)
 ```
 
