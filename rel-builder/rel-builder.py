@@ -314,7 +314,13 @@ def main():
         if not resources or len(resources) == 0:
             break
         ids = [r["identifier"] for r in resources]
-        properties = get_properties_bulk(ids, [args.property])
+        if args.property == "_name":
+            # Special case: use resource names as property values
+            properties = {}
+            for r in resources:
+                properties[r["identifier"]] = {"_name": r["resourceKey"]["name"]}
+        else:
+            properties = get_properties_bulk(ids, [args.property])
         for id, prop_values in properties.items():
             relations = get_relations(id, args.reltype)
             our_relations = {r["identifier"]: True for r in relations.get("resourceList", []) if
