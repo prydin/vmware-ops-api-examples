@@ -18,12 +18,14 @@ from aria.ops.result import CollectResult
 from aria.ops.result import EndpointResult
 from aria.ops.result import TestResult
 from aria.ops.timer import Timer
+
 from constants import ADAPTER_KIND
 from constants import ADAPTER_NAME
 
 logger = logging.getLogger(__name__)
 
 MAX_SLOS = 5
+PAGESIZE = 3
 
 def get_adapter_definition() -> AdapterDefinition:
     """
@@ -155,6 +157,8 @@ def get_adapter_definition() -> AdapterDefinition:
 def test(adapter_instance: AdapterInstance) -> TestResult:
     with Timer(logger, "Test"):
         result = TestResult()
+        ops_client = adapter_instance.suite_api_client
+        ops_client.get_token()
         try:
             pass # TODO: Implement connection test code here
         except Exception as e:
@@ -217,93 +221,97 @@ def collect(adapter_instance: AdapterInstance) -> CollectResult:
                 op_below = condition.upper() == "BELOW"
 
                 # Query for resources of the specified type
-                query = {
+                page = 0
+                res_query = {
                     "adapterKind": ["VMWARE"],
                     "resourceKind": [resource_type],
                 }
-                logger.debug("Querying for resources: %s", json.dumps(query))
-                result = ops_post(ops_client, "/api/resources/query", query)
-                if not result:
-                    continue
-                resources = result.get("resourceList", [])
-                if len(resources) == 0:
-                    logger.warning(f"No resources found for type {resource_type}")
-                    continue # TODO: Pagination if needed
-                ids_to_names = {}
-                slo_attainment_objects = {}
-                for r in resources:
-                    if "identifier" in r and "resourceKey" in r:
-                        resource_name = r["resourceKey"].get("name", "unknown")
-                        ids_to_names[r["identifier"]] = resource_name
-                        slo_attainment_objects[r["identifier"]] = result.object(ADAPTER_KIND, "SLOAttainment", f"{slo_name}/{resource_name}")
+                logger.debug("Querying for resources: %s", json.dumps(res_query))
+                while True:
+                    logger.debug(f"Querying resources page {page} for type {resource_type}")
+                    response = ops_post(ops_client, f"/api/resources/query?page={page}&pageSize={PAGESIZE}", res_query)
+                    page += 1
+                    resources = response.get("resourceList", [])
+                    if len(resources) == 0:
+                        logger.warning(f"No resources found for type {resource_type}")
+                        break
+                    ids_to_names = {}
+                    slo_attainment_objects = {}
+                    for r in resources:
+                        if "identifier" in r and "resourceKey" in r:
+                            resource_name = r["resourceKey"].get("name", "unknown")
+                            ids_to_names[r["identifier"]] = resource_name
+                            slo_attainment_objects[r["identifier"]] = result.object(ADAPTER_KIND, "SLOAttainment", f"{slo_name}/{resource_name}")
 
-                logger.debug(f"Found {len(ids_to_names)} resources of type {resource_type}")
+                    logger.debug(f"Found {len(ids_to_names)} resources of type {resource_type}")
 
-                # TODO: Implement pagination if needed
+                    # TODO: Implement pagination if needed
 
-                # Query for metrics for the resources
-                query = {
-                    "resourceId": list(ids_to_names.keys()),
-                    "statKey": [metric_name],
-                    "begin": start_time,
-                    "rollUpType": rollup,
-                    "intervalType": "MINUTES",
-                    "intervalQuantifier": interval,
-                }
-                metrics = ops_post(ops_client, "/api/resources/stats/query", json=query)
-                if not metrics or "values" not in metrics:
-                    continue
-
-                # Iterate over metrics for each resource
-                for metric_chunk in metrics.get("values", []):
-                    resource_id = metric_chunk.get("resourceId")
-                    name = ids_to_names.get(resource_id, resource_id)
-                    slo_attainment = slo_attainment_objects.get(resource_id, None)
-                    if not slo_attainment:
-                        logger.warning(f"No SLO Attainment object found for resource ID {resource_id}")
+                    # Query for metrics for the resources
+                    query = {
+                        "resourceId": list(ids_to_names.keys()),
+                        "statKey": [metric_name],
+                        "begin": start_time,
+                        "rollUpType": rollup,
+                        "intervalType": "MINUTES",
+                        "intervalQuantifier": interval,
+                    }
+                    metrics = ops_post(ops_client, "/api/resources/stats/query", json=query)
+                    if not metrics or "values" not in metrics:
                         continue
-                    slo.add_child(slo_attainment)
 
-                    breaches = 0
-                    metric_list = metric_chunk.get("stat-list", {}).get("stat", [])
+                    # Iterate over metrics for each resource
+                    for metric_chunk in metrics.get("values", []):
+                        resource_id = metric_chunk.get("resourceId")
+                        name = ids_to_names.get(resource_id, resource_id)
+                        slo_attainment = slo_attainment_objects.get(resource_id, None)
+                        if not slo_attainment:
+                            logger.warning(f"No SLO Attainment object found for resource ID {resource_id}")
+                            continue
+                        slo.add_child(slo_attainment)
 
-                    # Iterate through the metrics
-                    for metric in metric_list:
-                        timestamps = metric.get("timestamps", [])
-                        data = metric.get("data", [])
-                        if not timestamps or not data or len(timestamps) != len(data):
-                            continue
-                        first_ts = timestamps[0]
-                        last_ts = timestamps[-1]
-                        timespan = last_ts - first_ts
-                        if timespan <= 0:
-                            continue
-                        for value in data:
-                            if value is None:
+                        breaches = 0
+                        metric_list = metric_chunk.get("stat-list", {}).get("stat", [])
+
+                        # Iterate through the metrics
+                        for metric in metric_list:
+                            timestamps = metric.get("timestamps", [])
+                            data = metric.get("data", [])
+                            if not timestamps or not data or len(timestamps) != len(data):
                                 continue
-                            logger.debug(f"Evaluating value {value} against threshold {threshold}")
-                            if (op_below and value < threshold) or (not op_below and value > threshold):
-                                breaches += 1
+                            first_ts = timestamps[0]
+                            last_ts = timestamps[-1]
+                            timespan = last_ts - first_ts
+                            if timespan <= 0:
+                                continue
 
-                        # Calculate metrics and add them to the result
-                        total_intervals = timespan / (interval * 60000.0)
-                        attainment = 100.0 * (
-                                    1.0 - (breaches / total_intervals)) if total_intervals > 0 else 0.0
-                        logger.debug(f"{name},{slo_name},{attainment:.2f}")
-                        slo_score = Metric("sloScore", attainment)
-                        burn = breaches * interval * 60
-                        remaining = max(0, error_budget_seconds - (breaches * interval) * 60)
-                        error_budget_burn = Metric("errorBudgetBurn", burn)
-                        error_budget_remaining = Metric("errorBudgetRemaining", remaining)
-                        error_budget_burn_pct = Metric("errorBudgetBurnPct",
-                               (burn / error_budget_seconds) * 100 if error_budget_seconds > 0 else 0)
-                        error_budget_remaining_pct = Metric("errorBudgetRemainingPct",
-                               (remaining / error_budget_seconds) * 100 if error_budget_seconds > 0 else 0)
-                        slo_attainment.add_metric(error_budget_burn)
-                        slo_attainment.add_metric(error_budget_remaining)
-                        slo_attainment.add_metric(error_budget_burn_pct)
-                        slo_attainment.add_metric(error_budget_remaining_pct)
-                        slo_attainment.add_metric(slo_score)
+                            # Count the number of time buckets we've been out of compliance
+                            for value in data:
+                                if value is None:
+                                    continue
+                                logger.debug(f"Evaluating value {value} against threshold {threshold}")
+                                if (op_below and value < threshold) or (not op_below and value > threshold):
+                                    breaches += 1
+
+                            # Calculate metrics and add them to the result
+                            total_intervals = timespan / (interval * 60000.0)
+                            attainment = 100.0 * (
+                                        1.0 - (breaches / total_intervals)) if total_intervals > 0 else 0.0
+                            logger.debug(f"{name},{slo_name},{attainment:.2f}")
+                            slo_score = Metric("sloScore", attainment)
+                            burn = breaches * interval * 60
+                            remaining = max(0, error_budget_seconds - burn)
+                            error_budget_burn = Metric("errorBudgetBurn", burn)
+                            error_budget_remaining = Metric("errorBudgetRemaining", remaining)
+                            error_budget_burn_pct = Metric("errorBudgetBurnPct",
+                                   (burn / error_budget_seconds) * 100 if error_budget_seconds > 0 else 0)
+                            error_budget_remaining_pct = Metric("errorBudgetRemainingPct",
+                                   (remaining / error_budget_seconds) * 100 if error_budget_seconds > 0 else 0)
+                            slo_attainment.add_metric(error_budget_burn)
+                            slo_attainment.add_metric(error_budget_remaining)
+                            slo_attainment.add_metric(error_budget_burn_pct)
+                            slo_attainment.add_metric(error_budget_remaining_pct)
+                            slo_attainment.add_metric(slo_score)
 
                     resource_name_property = Property("resourceName", name)
                     slo_attainment.add_property(resource_name_property)
@@ -330,7 +338,7 @@ def slo_type_to_times(lookback, now, slo_type):
     return slo_length, start_time
 
 def ops_post(client, path, json):
-    with client.post("/api/resources/stats/query", json=json) as response:
+    with client.post(path, json=json) as response:
         if response.status_code != 200:
             logger.error(f"Failed to retrieve metrics: {response.status_code} {response.text}")
             return None
