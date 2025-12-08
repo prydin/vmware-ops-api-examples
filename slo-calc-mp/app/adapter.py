@@ -3,12 +3,11 @@
 import json
 import sys
 import time
-from email.policy import default
+import datetime
 from typing import List
 from datetime import datetime
 
 import aria.ops.adapter_logging as logging
-import psutil
 from aria.ops.adapter_instance import AdapterInstance
 from aria.ops.data import Metric
 from aria.ops.data import Property
@@ -25,7 +24,7 @@ from constants import ADAPTER_NAME
 logger = logging.getLogger(__name__)
 
 MAX_SLOS = 5
-PAGESIZE = 3
+PAGESIZE = 100
 
 def get_adapter_definition() -> AdapterDefinition:
     """
@@ -173,6 +172,7 @@ def test(adapter_instance: AdapterInstance) -> TestResult:
 
 def collect(adapter_instance: AdapterInstance) -> CollectResult:
     logger.debug("Starting collection")
+    logger.debug("Adapter Instance: %s", adapter_instance.get_json())
     with Timer(logger, "Collection"):
         try:
             # Log in and create SLOWorld object
@@ -197,13 +197,12 @@ def collect(adapter_instance: AdapterInstance) -> CollectResult:
                 rollup = adapter_instance.get_identifier_value(f"sloRollupType{i}")
                 interval = int(adapter_instance.get_identifier_value(f"rollupInterval{i}"))
                 slo = int(adapter_instance.get_identifier_value(f"slo{i}"))
+                slo_type = adapter_instance.get_identifier_value(f"sloType{i}")
 
                 # Calculate start times for different SLO periods 
                 now = datetime.now()
-
-                slo_type = adapter_instance.get_identifier_value(f"sloType{i}")
                 slo_length, start_time = slo_type_to_times(lookback, now, slo_type)
-                logger.debug(f"SLO {slo_name}: start_time={start_time}, slo_length={slo_length}")
+                logger.debug(f"SLO {slo_name}: start_time={datetime.fromtimestamp(start_time/1000)}, slo_length={slo_length}, slo_type={slo_type}")
 
                 # Calculate the error budget
                 error_budget_seconds = slo_length * (1.0-(slo / 10000.0))
@@ -327,7 +326,7 @@ def collect(adapter_instance: AdapterInstance) -> CollectResult:
 
 def slo_type_to_times(lookback, now, slo_type):
     if slo_type == "Monthly":
-        start_time = int(datetime(now.year, 1, 1).timestamp() * 1000)
+        start_time = int(datetime(now.year, now.month, 1).timestamp() * 1000)
         slo_length = 30 * 86400
     elif slo_type == "Quarterly":
         start_time = int(datetime(now.year, ((now.month - 1) // 3) * 3 + 1, 1).timestamp() * 1000)
