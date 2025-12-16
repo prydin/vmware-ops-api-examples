@@ -186,39 +186,7 @@ def get_all_symptom_definitions():
     return response.get("symptomDefinitions", [])
 
 
-def main():
-    """
-    Main function to build relationships between resources based on properties.
-    """
-    parser = argparse.ArgumentParser(prog="rel-builder",
-                                     description="Builds relationships between resources based on properties")
-    parser.add_argument("-H", "--host", required=True, help="The address of the VCF Ops host")
-    parser.add_argument("-u", "--user", required=True, help="The VCF Ops user")
-    parser.add_argument("-p", "--password", required=True, help="The VCF Ops password")
-    parser.add_argument("-a", "--authsource", required=False,
-                        help="The VCF Ops authentication source. Default is Local")
-    parser.add_argument("-s", "--symptoms", required=False, action="store_true",
-                        help="If set, dump symptoms instead of alerts")
-    parser.add_argument("-U", "--unsafe", required=False, action="store_true",
-                        help="Skip certificate checking (this is unsafe!)")
-
-    args = parser.parse_args()
-
-    if args.unsafe:
-        # Unsafe: accept self-signed certificates
-        ssl_context = ssl._create_unverified_context()
-        globals()["ssl_context"] = ssl_context
-
-    try:
-        login(args.host, args.user, args.password, args.authsource)
-    except URLError as e:
-        if "certificate" in str(e).lower():
-            sys.stderr.write(
-                "The server appears to have a self-signed certificate. Override by adding the --unsafe option (not recommended in production)\n")
-            sys.exit(1)
-        else:
-            raise
-
+def dump(file, args):
     raw_types = get_all_alert_types()
     symptom_definitions = get_all_symptom_definitions()
     symptom_name_map = {s.get("id"): s.get("name") for s in symptom_definitions}
@@ -227,7 +195,7 @@ def main():
         alert_types[atype.get("id")] = atype.get("name")
         for stype in atype.get("subTypes", []):
             alert_types[stype.get("id")] = stype.get("name")
-    csvfile = csv.writer(sys.stdout, delimiter=',', quotechar='"', quoting=csv.QUOTE_ALL)
+    csvfile = csv.writer(file, delimiter=',', quotechar='"', quoting=csv.QUOTE_ALL)
     if args.symptoms:
         for symptom in symptom_definitions:
             state = symptom.get("state")
@@ -286,5 +254,44 @@ def main():
                               ])
 
 
+def main():
+    """
+    Main function to build relationships between resources based on properties.
+    """
+    parser = argparse.ArgumentParser(prog="alert-dumper",
+                                     description="Dumps alert defitions or symptom definitions from VCF Ops in CSV format")
+    parser.add_argument("-H", "--host", required=True, help="The address of the VCF Ops host")
+    parser.add_argument("-u", "--user", required=True, help="The VCF Ops user")
+    parser.add_argument("-p", "--password", required=True, help="The VCF Ops password")
+    parser.add_argument("-a", "--authsource", required=False,
+                        help="The VCF Ops authentication source. Default is Local")
+    parser.add_argument("-s", "--symptoms", required=False, action="store_true",
+                        help="If set, dump symptoms instead of alerts")
+    parser.add_argument("-o", "--output", required=False, help="Output file")
+    parser.add_argument("-U", "--unsafe", required=False, action="store_true",
+                        help="Skip certificate checking (this is unsafe!)")
+
+    args = parser.parse_args()
+
+    if args.unsafe:
+        # Unsafe: accept self-signed certificates
+        ssl_context = ssl._create_unverified_context()
+        globals()["ssl_context"] = ssl_context
+
+    try:
+        login(args.host, args.user, args.password, args.authsource)
+    except URLError as e:
+        if "certificate" in str(e).lower():
+            sys.stderr.write(
+                "The server appears to have a self-signed certificate. Override by adding the --unsafe option (not recommended in production)\n")
+            sys.exit(1)
+        else:
+            raise
+
+    if args.output:
+        with open(args.output, "w", encoding='utf-8') as f:
+            dump(f, args)
+    else:
+        dump(sys.stdout, args)
 if __name__ == "__main__":
     main()

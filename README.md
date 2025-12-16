@@ -13,6 +13,9 @@ Repository of various useful API examples
 | [dup-mac-detect](dup-mac-detect)                                   | Reports VMs with duplicate MAC addresses                                                   |
 | [group-from-name](group-from-name)                                 | Creates groups based on patterns in VM names                                               |
 | [slo-calc](slo-calc)                                               | Calculates SLO attainment scores                                                           |
+| [slo-calc-mp](slo-calc-mp)                                         | Calculates SLO attainment scores as a custom management pack                               |
+| [alert-dumper](alert-dumper)                                       | Exports alert definitions and symptom definitions to a CSV file                            |
+| [rel-builder](rel-builder)                                         | Example script for building relationships between objects based on various criteria        |
 
 
 
