@@ -172,16 +172,19 @@ def get_all_alert_types():
         page += 1
     return types
 
+
 @lru_cache(maxsize=10000)
 def get_symptom_definition(symptom_id):
     uri = f"/api/symptomdefinitions?id={symptom_id}"
     response = get(uri)
     return response.get("symptomDefinitions", [])[0]
 
+
 def get_all_symptom_definitions():
     uri = f"/api/symptomdefinitions?pageSize={PAGESIZE}"
     response = get(uri)
     return response.get("symptomDefinitions", [])
+
 
 def main():
     """
@@ -217,17 +220,41 @@ def main():
             raise
 
     raw_types = get_all_alert_types()
-    get_symptom_definitions = get_all_symptom_definitions()
-    symptom_name_map = {s.get("id"): s.get("name") for s in get_symptom_definitions}
+    symptom_definitions = get_all_symptom_definitions()
+    symptom_name_map = {s.get("id"): s.get("name") for s in symptom_definitions}
     alert_types = {}
     for atype in raw_types:
         alert_types[atype.get("id")] = atype.get("name")
         for stype in atype.get("subTypes", []):
             alert_types[stype.get("id")] = stype.get("name")
-    csvfile = csv.writer(sys.stdout)
+    csvfile = csv.writer(sys.stdout, delimiter=',', quotechar='"', quoting=csv.QUOTE_ALL)
     if args.symptoms:
-        sys.stdout.write("Symptom dumping not yet implemented\n")
-        sys.exit(0)
+        for symptom in symptom_definitions:
+            state = symptom.get("state")
+            condition = state.get("condition")
+
+            if condition and condition["type"] in ["CONDITION_HT", "CONDITION_PROPERTY_STRING", "CONDITION_PROPERTY_NUMERIC"]:
+                key = condition["key"]
+                operator = condition["operator"]
+                value = condition["value"] if "value" in condition else condition["stringValue"]
+            elif condition and condition["type"] == "CONDITION_MESSAGE_EVENT":
+                key = condition["eventType"]
+                value = condition["message"]
+                operator = condition["operator"]
+            elif condition and condition["type"] == "CONDITION_FAULT":
+                key = condition["faultKey"]
+                operator = ""
+                value = ";".join(condition.get("faultEvents", []))
+            elif condition and condition["type"] == "CONDITION_DT":
+                key = condition["key"]
+                operator = condition["operator"]
+                value = ""
+            else:
+                key = ""
+                operator = ""
+                value = ""
+            csvfile.writerow([symptom["name"], state["severity"], symptom["adapterKindKey"],
+                              symptom["resourceKindKey"], key, operator, value])
     else:
         alerts = get_all_alert_definitions()
         for alert in alerts:
