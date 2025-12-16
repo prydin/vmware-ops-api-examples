@@ -1,4 +1,4 @@
-# Relationship Builder Example
+# Alert Dumper Example
 
 Example script for exporting details about alert definitions and symptom definitions to a CSV file.
 
