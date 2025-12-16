@@ -173,14 +173,31 @@ def create_resource_maybe(adapter_type, resource_type, vc_object, vcenter_id):
 parser = argparse.ArgumentParser(description='Collects information about host profiles')
 parser.add_argument('-H', '--host', required=True, help="vROps host")
 parser.add_argument('-u', '--user', required=True, help="vROps user")
-parser.add_argument('-p', '--password', required=True, help="vROps password")
+parser.add_argument('-p', '--password', required=False, help="vROps password")
+parser.add_argument('--passwordfile', required=True, help="vROps password file")
 parser.add_argument('-a', '--authsource', help="Authentication source (default: Local)")
 parser.add_argument('-U', '--unsafe', action="store_true", help="Skip certificate checking (unsafe!)")
 parser.add_argument('-v', '--vcuser', required=True, help="vCenter user")
 parser.add_argument('-V', '--vchost', required=True, help="vCenter host")
-parser.add_argument('-W', '--vcpassword', required=True, help="vCenter password")
+parser.add_argument('-W', '--vcpassword', required=False, help="vCenter password")
+parser.add_argument('--vcpasswordfile', required=False, help="vCenter password file")
 parser.add_argument('--verbose', action='store_true', help="Enable verbose logging to stderr")
 args = parser.parse_args()
+
+if vcpassword := args.vcpassword is None:
+    if args.vcpasswordfile:
+        with open(args.vcpasswordfile, 'r') as f:
+            args,vcpassword = f.read().strip()
+    else:
+        print("Either --vcpassword or --vcpasswordfile must be provided", file=sys.stderr)
+        sys.exit(1)
+if password := args.password is None:
+    if args.passwordfile:
+        with open(args.passwordfile, 'r') as f:
+            args.password = f.read().strip()
+    else:
+        print("Either --password or --passwordfile must be provided", file=sys.stderr)
+        sys.exit(1)
 
 # Configure logging based on verbose flag
 handler = logging.StreamHandler(sys.stderr)
