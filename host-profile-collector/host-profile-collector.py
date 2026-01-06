@@ -5,6 +5,8 @@ host-profile-collector.py
 
 Collects host profile information from vCenter and sends it to vROps.
 """
+from modulefinder import packagePathMap
+from urllib.error import HTTPError
 
 from pyVmomi import vim
 from pyVim.connect import SmartConnect
@@ -54,7 +56,7 @@ def login(host, username, password, auth_source=None):
 def post(uri, data):
     """Send a POST request to vROps and return parsed JSON or None."""
     rq = request.Request(f"{url_base}{uri}", data=json.dumps(data).encode("utf-8"), headers=headers)
-    logger.debug("POST %s payload keys=%s", rq.full_url, list(data.keys()) if isinstance(data, dict) else None)
+    logger.debug("POST %s payload=%s", rq.full_url, json.dumps(data))
     response = request.urlopen(url=rq, context=ssl_context)
     status = response.getcode()
     content = response.read().decode("utf-8")
@@ -179,6 +181,7 @@ parser.add_argument('-a', '--authsource', help="Authentication source (default: 
 parser.add_argument('-U', '--unsafe', action="store_true", help="Skip certificate checking (unsafe!)")
 parser.add_argument('-v', '--vcuser', required=True, help="vCenter user")
 parser.add_argument('-V', '--vchost', required=True, help="vCenter host")
+parser.add_argument('--components', required=False, action='store_true', help="Include software components")
 parser.add_argument('-W', '--vcpassword', required=False, help="vCenter password")
 parser.add_argument('--vcpasswordfile', required=False, help="vCenter password file")
 parser.add_argument('--verbose', action='store_true', help="Enable verbose logging to stderr")
@@ -233,8 +236,6 @@ for profile in profiles:
     vcenters = query_resource({
         "adapterKind": ["VMWARE"],
         "resourceKind": ["vCenter"],
-        #"propertyName": "summary|vcuuid",
-        #"propertyValue": vcenter_id
     })
     if vcenters:
         logger.debug("Linking profile to vCenter: %s", vcenters[0]["resourceKey"]["name"])
@@ -247,6 +248,9 @@ for profile in profiles:
             continue
         resource_id = create_resource_maybe("HostProfileAdapter", "HostCompliance", host, vcenter_id)
         cc_result = host.complianceCheckResult
+        if not cc_result:
+            logger.debug("No compliance check result for host: %s", host.name)
+            continue
         if cc_result.complianceStatus == "nonCompliant":
             noncompliant_hosts += 1
         add_metrics(resource_id, {
@@ -263,5 +267,69 @@ for profile in profiles:
         if ops_hosts:
             add_relationships(resource_id, [ops_hosts[0]["identifier"], profile_id], "parents")
     add_metrics(profile_id, {"validationStatus": profile.validationState, "nonCompliantHosts": noncompliant_hosts})
+if args.components:
+
+    # Deal with software packages
+    for host in host_view.view:
+        packages = host.configManager.imageConfigManager.FetchSoftwarePackages()
+
+        # Get all packages for this host that are known to ops
+        resources = query_resource({
+           "adapterKind": ["HostProfileAdapter"],
+           "resourceKind": ["HostSoftwarePackage"],
+           "propertyConditions": {
+               "conjunctionOperator": "AND",
+               "conditions": [
+                   {
+                       "stringValue": vcenter_id,
+                       "key": "vcenterUuid",
+                       "operator": "EQ"
+                   },
+                   {
+                       "stringValue": host._moId,
+                       "key": "hostId",
+                       "operator": "EQ"
+                   }
+               ]
+           }
+        })
+        # Build a set of known package names for this host
+        known_package_names = {}
+        for resource in resources:
+            known_package_names[resource["resourceKey"]["name"]] = resource["identifier"]
+
+        for package in packages:
+
+            # Have we already seen this package?
+            if package.name in known_package_names:
+                resource_id = known_package_names[package.name]
+                logger.debug("Software package already exists: %s on host %s", package.name, host.name)
+            else:
+                # New resource. Create it!
+                new_resource = create_resource("HostProfileAdapter", "HostSoftwarePackage", f"{package.name}",{ "hostId": host._moId, "vcenterUuid": vcenter_id, "packageId": package.name})
+                resource_id = new_resource["identifier"]
+                logger.debug("Created software package resource: %s on host %s", package.name, host.name)
+
+                # Form relationship to the host. We only need to do this once, since it's not changing.
+                # Look up the corresponding host resource in vROps
+                ops_hosts = query_resource({
+                    "adapterKind": ["VMWARE"],
+                    "resourceKind": ["HostSystem"],
+                    "name": [host.name]})
+                if len(ops_hosts) > 0:
+                    ops_host = ops_hosts[0]["identifier"]
+                    add_relationships(resource_id, [ops_host], "parents")
+
+            add_properties(resource_id, {
+                "hostName": host.name,
+                "hostId": host._moId,
+                "vcenterUuid": vcenter_id,
+                "fullName": package.summary,
+                "description": package.description,
+                "version": package.version,
+                "vendor": package.vendor,
+                "acceptanceLevel": package.acceptanceLevel
+            })
+
 
 host_view.Destroy()
