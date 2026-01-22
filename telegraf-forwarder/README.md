@@ -65,7 +65,3 @@ python telegraf-forwarder [-h] -H HOST -u USER -p PASSWORD [-a AUTHSOURCE]
   [[processors.printer]]
 ```
 
-## Example 
-```commandline
-python -H example.local -u admin -p secret -r VirtualMachine -c config.yaml
-```
