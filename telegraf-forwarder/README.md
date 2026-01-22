@@ -44,6 +44,27 @@ python telegraf-forwarder [-h] -H HOST -u USER -p PASSWORD [-a AUTHSOURCE]
     - mem|density
 ```
 
+## Telegraf config example
+```toml
+# Read metrics from one or more commands that can output to stdout
+[agent]
+  interval = "5m"
+
+[[inputs.exec]]
+  ## Commands array
+  commands = [ "python3 telegraf-forwarder.py -H $VROPS_HOST -u user -P /somwewhere/keys/vrops.txt -c config.yaml" ]
+  data_format = "influx"
+  timeout = "4m"
+
+[[outputs.prometheus_client]]
+  listen = ":8888"
+  metric_batch_size = 1000
+  metric_buffer_limit = 100000
+  expiration_interval = "0s"
+
+  [[processors.printer]]
+```
+
 ## Example 
 ```commandline
 python -H example.local -u admin -p secret -r VirtualMachine -c config.yaml
