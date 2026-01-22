@@ -190,7 +190,7 @@ args = parser.parse_args()
 if vcpassword := args.vcpassword is None:
     if args.vcpasswordfile:
         with open(args.vcpasswordfile, 'r') as f:
-            args,vcpassword = f.read().strip()
+            args.vcpassword = f.read().strip()
     else:
         print("Either --vcpassword or --vcpasswordfile must be provided", file=sys.stderr)
         sys.exit(1)

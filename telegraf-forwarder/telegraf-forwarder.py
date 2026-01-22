@@ -84,7 +84,7 @@ key_ttable = str.maketrans(" |.$", "____")
 # Parse arguments
 parser = argparse.ArgumentParser(
     prog='telegraf-forwarder',
-    description='A simple Telgraf forwarder for getting metrics from VCF Ops',
+    description='A simple Telegraf forwarder for getting metrics from VCF Ops',
 )
 parser.add_argument('-H', '--host', required=True)
 parser.add_argument('-u', '--user', required=True)
@@ -105,6 +105,8 @@ if args.passwordfile:
         args.password = f.read().strip()
 
 # Load configuration
+# We're simply loading the resource query from the config file. This makes the code
+# simple and allows arbitrarily complex queries to be defined.
 with open(args.config, "r") as config_file:
     config = yaml.safe_load(config_file)
 
@@ -124,12 +126,16 @@ try:
         for metric in metrics:
             metric = metric.translate(key_ttable)
         while True:
+            # Execute the query defined in the config file
+            # We're loading chunks of PAGESIZE resources at a time to avoid overwhelming the server
             resources = client.query_resources(config_section["resourceQuery"], page,PAGESIZE)
             page += 1
             stderr.write(f"Found {len(resources)} resources\n")
             if len(resources) == 0:
                 break
             resource_ids = list(map(lambda r: r["identifier"], resources))
+
+            # Build lookup tables for resource names and kinds
             resource_names = {}
             resource_kinds = {}
             adapter_kinds = {}
@@ -137,12 +143,17 @@ try:
                 resource_names[r["identifier"]] = r["resourceKey"]["name"]
                 resource_kinds[r["identifier"]] = r["resourceKey"]["resourceKindKey"]
                 adapter_kinds[r["identifier"]] = r["resourceKey"]["adapterKindKey"]
+
+            # Execute the metric query
             metric_result = client.get_latest_metrics(resource_ids, metrics)["values"]
             for resource_metrics in metric_result:
+                # Get the names of resources and resource kinds and sanitize them for InfluxDB
                 resource_id = resource_metrics["resourceId"]
                 resource_name = resource_names.get(resource_id, "-unknown-").replace(" ", "\\ ")
                 resource_kind = resource_kinds.get(resource_id, "-unknown-").replace(" ", "\\ ")
                 adapter_kind = adapter_kinds.get(resource_id, "-unknown-").replace(" ", "\\ ")
+
+                # Loop through all the metrics for the resource and transform them to InfluxDB line format
                 for stat in resource_metrics["stat-list"]["stat"]:
                     stat_key = stat["statKey"]["key"]
                     timestamps = stat["timestamps"]
@@ -157,8 +168,9 @@ try:
                     field = field.translate(key_ttable)
                     values = stat["data"]
                     timestamps = stat["timestamps"]
-                    for i in range(len(timestamps)):
 
+                    # Print a metric record in InfluxDB line format for each data point
+                    for i in range(len(timestamps)):
                         out = f"{measurement},name={resource_name},resourceKind={resource_kind},adapterKind={adapter_kind} {field}={values[i]} {timestamps[i]*1000000}"
                         print(out)
 
