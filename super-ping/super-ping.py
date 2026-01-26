@@ -28,6 +28,7 @@ PAGESIZE=1000
 
 url_base = ""
 headers = {"Accept": "application/json", "Content-Type": "application/json"}
+ssl_context = ssl.create_default_context()
 
 def _read_response(response):
     """
@@ -133,6 +134,7 @@ def put(uri, data):
     payload = json.dumps(data).encode("utf-8")
     rq = request.Request(url_base + uri, data=payload, headers=headers, method="PUT")
     try:
+
         response = request.urlopen(rq, context=ssl_context)
     except HTTPError as e:
         body = e.read().decode() if hasattr(e, "read") else ""
