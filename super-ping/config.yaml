@@ -35,4 +35,19 @@ targets:
       - https://auto-01.vcf-lab.local
       - https://vmware.com/foobar
     timeout: 10
+  - type: cert
+    port: 443
+    vms:
+      parentType: "cluster"
+      parentName: "vcf-lab-mgmt"
+      includeIps:
+        - 192.168.1.0/24
+      excludeIps:
+        - 192.168.2.0/24
+    addresses:
+      - www.google.com
+      - broadcom.com
+      - whitehouse.gov
+      - www.vmware.com
+    timeout: 10
 
