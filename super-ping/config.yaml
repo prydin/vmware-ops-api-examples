@@ -1,0 +1,37 @@
+targets:
+  - type: cert
+    port: 443
+    addresses:
+      - vc-01.vcf-lab.local
+      - ops-01.vcf-lab.local
+      - auto-01.vcf-lab.local
+    timeout: 10
+  - type: vms
+    parentType: "cluster"
+    parentName: "vcf-lab-mgmt"
+    excludeIps:
+      - 192.168.2.0/24
+    timeout: 10
+  - type: icmp
+    addresses:
+      - vc-01.vcf-lab.local
+      - ops-01.vcf-lab.local
+      - auto-01.vcf-lab.local
+    timeout: 10
+
+  - type: tcp
+    port: 443
+    addresses:
+      - vc-01.vcf-lab.local
+      - ops-01.vcf-lab.local
+      - auto-01.vcf-lab.local
+    timeout: 10
+
+  - type: url
+    addresses:
+      - https://vc-01.vcf-lab.local
+      - https://ops-01.vcf-lab.local
+      - https://auto-01.vcf-lab.local
+      - https://vmware.com/foobar
+    timeout: 10
+
