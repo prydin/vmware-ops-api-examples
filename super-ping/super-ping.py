@@ -7,7 +7,6 @@ import time
 import threading
 import queue
 from ipaddress import IPv4Address
-from multiprocessing.managers import Value
 from sys import stderr
 
 import requests
@@ -19,8 +18,6 @@ import yaml
 from math import floor
 import OpenSSL
 from datetime import datetime
-import platform
-import subprocess
 import icmplib
 import ipaddress
 
@@ -343,6 +340,28 @@ def ping_icmp(host, timeout=10):
             "success": 0,
         }
 
+def getips_for_vms(target, ip_to_vm):
+    addresses = []
+    if "vms" not in target:
+        return addresses
+    vms = target["vms"]
+    resources = get_related_resources("VMWARE", "VirtualMachine", vms["parentType"], vms["parentName"])
+    exclude_ips = vms["excludeIPs"] if "excludeIPs" in vms else []
+    for r in resources:
+        all_props = get_all_properties(r["identifier"])
+        for prop in all_props.get("property", []):
+            if re.match(r"net:[0-9]+\|ip_address", prop.get("name")):
+                ip_address = prop.get("value")
+                if ip_address:
+                    try:
+                        if IPv4Address(ip_address) not in exclude_ips:
+                            addresses.append(ip_address)
+
+                            ip_to_vm[ip_address] = r["identifier"]
+                    except ValueError:
+                        # Not an IP address
+                        pass
+    return addresses
 
 # Parse arguments
 parser = argparse.ArgumentParser(
@@ -401,36 +420,20 @@ for i in range(num_threads):
 ip_to_vm = {}
 for target in config.get("targets", []):
     timeout = target.get("timeout", 10)
+    addresses = getips_for_vms(target, ip_to_vm)
+    addresses.extend(target.get("addresses", []))
     if target["type"] == "icmp":
-        for address in target.get("addresses", []):
+        for address in addresses:
             input_queue.put((ping_icmp, (address, timeout)))
     elif target["type"] == "tcp":
-        for address in target.get("addresses", []):
+        for address in addresses:
             input_queue.put((ping_tcp, (address, target.get("port", 443), timeout)))
     elif target["type"] == "cert":
-        for address in target.get("addresses", []):
+        for address in addresses:
             input_queue.put((get_cert_metrics, (address, target.get("port", 443), timeout)))
     elif target["type"] == "url":
-        for address in target.get("addresses", []):
+        for address in addresses:
             input_queue.put((ping_url, (address, timeout)))
-    elif target["type"] == "vms":
-        exclude_ips = target.get("excludeIps", [])
-        for excluded_ip in exclude_ips:
-            network = ipaddress.ip_network(excluded_ip)
-        resources = get_related_resources("VMWARE", "VirtualMachine", target["parentType"], target["parentName"])
-        for r in resources:
-            all_props = get_all_properties(r["identifier"])
-            for prop in all_props.get("property", []):
-                if re.match(r"net:[0-9]+\|ip_address", prop.get("name")):
-                    ip_address = prop.get("value")
-                    if ip_address:
-                        try:
-                            if IPv4Address(ip_address) not in exclude_ips:
-                                input_queue.put((ping_icmp, (ip_address, timeout)))
-                                ip_to_vm[ip_address] = r["identifier"]
-                        except ValueError:
-                            # Not an IP address
-                            pass
 
 
 # Put enough end tokens in the queue for the workers to exit
