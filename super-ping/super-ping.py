@@ -296,7 +296,7 @@ def ping_url(url, timeout=10):
         return {
             "type": "SuperPingURL",
             "address": url,
-            "success": 0,
+            "success": e.response in range(200, 299) if e.response else 0,
             "status_code": e.response.status_code if e.response else None
         }
 
@@ -336,6 +336,7 @@ def ping_icmp(host, timeout=10):
                 "success": 0
             }
     except Exception as e:
+        print(e)
         return {
             "type": "SuperPingICMP",
             "address": host,
@@ -485,7 +486,7 @@ while True:
             "stat-contents": stat_list,
         }]
     }
-    print(f"Posted {len(result)-2} metrics for {address} ({resource_type})")
+    print(f"Posted {len(result)-2} metrics for {address} ({resource_type} {result})")
     post("/api/resources/stats", payload)
 
     # Deal with properties
