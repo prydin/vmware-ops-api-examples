@@ -504,7 +504,7 @@ while True:
         stat_list.append({
             "statKey": metric,
             "timestamps": [int(time.time() * 1000)],
-            "values": [value]
+            "data": [value]
         })
 
     payload = {
