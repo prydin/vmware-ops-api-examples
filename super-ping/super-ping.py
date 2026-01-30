@@ -1,7 +1,9 @@
 import argparse
+import platform
 import re
 import ssl
 import socket
+import subprocess
 import sys
 import time
 import threading
@@ -288,15 +290,15 @@ def ping_url(url, timeout=10):
         return {
             "type": "SuperPingURL",
             "address": url,
-            "success": 1,
+            "success": 1 if response.status_code in range(200, 300) else 0,
             "status_code": response.status_code,
-            "response_time_ms": response.elapsed.total_seconds() * 1000
+            "response_time_ms": int(response.elapsed.total_seconds() * 100000) / 100
         }
     except requests.exceptions.RequestException as e:
         return {
             "type": "SuperPingURL",
             "address": url,
-            "success": e.response in range(200, 299) if e.response else 0,
+            "success": 0,
             "status_code": e.response.status_code if e.response else None
         }
 
@@ -309,7 +311,7 @@ def ping_tcp(host, port=443, timeout=10):
                 "type": "SuperPingTCP",
                 "address": host,
                 "success": 1,
-                "response_time_ms": (end_time - start_time) * 1000
+                "response_time_ms": int((end_time - start_time) * 100000) / 100
             }
     except socket.error as e:
         return {
@@ -319,15 +321,40 @@ def ping_tcp(host, port=443, timeout=10):
         }
 
 
+def ping(host, timeout):
+    # Determine the correct ping command parameters based on the operating system
+    param1 = '-n' if platform.system().lower() == 'windows' else '-c'
+    param2 = '-w' if platform.system().lower() == 'windows' else '-W'
+    command = ['ping', param1, '1', param2, str(timeout), host] # Ping once
+
+    try:
+        # Run the command and capture output
+        result = subprocess.run(command, capture_output=True, text=True, timeout=timeout + 1)
+        output = result.stdout
+        output = output.replace("\n", " ")
+
+        t = None
+        m = re.match(r".*time[=<]\s*([0-9.]+)\s*ms.*", output, re.IGNORECASE | re.MULTILINE)
+        if m:
+            t = float(m.group(1))
+        # Check the return code and output for success/failure
+        if t and result.returncode == 0 and ("Request timed out." not in output and "100% packet loss" not in output):
+            return t
+        return None
+    except subprocess.TimeoutExpired:
+        return None
+    except Exception as e:
+        return None
+
 def ping_icmp(host, timeout=10):
     try:
-        result = icmplib.ping(host, count=1, timeout=timeout, privileged=False)
-        if result.packet_loss == 0:
+        t = ping(host, timeout)
+        if t is not None:
             return {
                 "type": "SuperPingICMP",
                 "address": host,
                 "success": 1,
-                "response_time_ms": result.avg_rtt
+                "response_time_ms": t
             }
         else:
             return {

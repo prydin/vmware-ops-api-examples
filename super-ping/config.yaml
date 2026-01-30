@@ -18,6 +18,7 @@ targets:
       - vc-01.vcf-lab.local
       - ops-01.vcf-lab.local
       - auto-01.vcf-lab.local
+      - google.com
     timeout: 10
 
   - type: tcp
