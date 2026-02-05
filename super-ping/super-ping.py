@@ -228,6 +228,19 @@ def add_relation(source_id, target_id, relation_type):
     return post(f"/api/resources/{source_id}/relationships/{relation_type}", payload)
 
 
+def get_adapter(adapter_kind):
+    response = get(f"/api/adapters?adapterKindKey={adapter_kind}")
+    adapters = response["adapterInstancesInfoDto"]
+    return adapters[0] if len(adapters) > 0 else None
+
+
+def create_adapter(adapter_kind, adapter_name, description=""):
+    payload = {
+        "adapterKindKey": adapter_kind,
+        "name": adapter_name,
+        "description": description
+    }
+    return post("/api/adapters", payload)
 
 def run_worker(input_queue, output_queue):
     while True:
@@ -270,7 +283,7 @@ def get_cert_metrics(host, port=443, timeout=10):
             subject += "/" + part[0].decode() + "=" + part[1].decode()
 
         return {
-            "type": "SuperPingCert",
+            "type": "Super-PingCert",
             "$subject": subject,
             "success": 1,
             "address": host,
@@ -279,7 +292,7 @@ def get_cert_metrics(host, port=443, timeout=10):
     except Exception as e:
         print(e)
         return {
-            "type": "SuperPingCert",
+            "type": "Super-PingCert",
             "address": host,
             "success": 0,
         }
@@ -288,7 +301,7 @@ def ping_url(url, timeout=10):
     try:
         response = requests.get(url, timeout=timeout, verify=False)
         return {
-            "type": "SuperPingURL",
+            "type": "Super-PingURL",
             "address": url,
             "success": 1 if response.status_code in range(200, 300) else 0,
             "status_code": response.status_code,
@@ -296,7 +309,7 @@ def ping_url(url, timeout=10):
         }
     except requests.exceptions.RequestException as e:
         return {
-            "type": "SuperPingURL",
+            "type": "Super-PingURL",
             "address": url,
             "success": 0,
             "status_code": e.response.status_code if e.response else None
@@ -308,14 +321,14 @@ def ping_tcp(host, port=443, timeout=10):
         with socket.create_connection((host, port), timeout=timeout):
             end_time = time.time()
             return {
-                "type": "SuperPingTCP",
+                "type": "Super-PingTCP",
                 "address": host,
                 "success": 1,
                 "response_time_ms": int((end_time - start_time) * 100000) / 100
             }
     except socket.error as e:
         return {
-            "type": "SuperPingTCP",
+            "type": "Super-PingTCP",
             "address": host,
             "success": 0
         }
@@ -351,21 +364,21 @@ def ping_icmp(host, timeout=10):
         t = ping(host, timeout)
         if t is not None:
             return {
-                "type": "SuperPingICMP",
+                "type": "Super-PingICMP",
                 "address": host,
                 "success": 1,
                 "response_time_ms": t
             }
         else:
             return {
-                "type": "SuperPingICMP",
+                "type": "Super-PingICMP",
                 "address": host,
                 "success": 0
             }
     except Exception as e:
         print(e)
         return {
-            "type": "SuperPingICMP",
+            "type": "Super-PingICMP",
             "address": host,
             "success": 0,
         }
@@ -439,6 +452,13 @@ except URLError as e:
 with open(args.config, "r") as config_file:
     config = yaml.safe_load(config_file)
 
+# Create AdapterInstance if needed
+#adapter_instance = get_adapter("Super-PingAdapter")
+#if not adapter_instance:
+#    adapter_instance = create_adapter("Super-PingAdapter", "Super-PingAdapterInstance", "Super-Ping Adapter")
+#adapter_id = adapter_instance["id"]
+
+
 # Prepare pinger threads
 input_queue = queue.Queue()
 output_queue = queue.Queue()
@@ -477,7 +497,7 @@ while True:
     address = result.get("address")
 
     # Check if we already have the resource
-    r = get_resource_by_name("SuperPingAdapter", resource_type, address)
+    r = get_resource_by_name("Super-PingAdapter", resource_type, address)
     if r:
         res_id = r["identifier"]
     else:
@@ -485,14 +505,15 @@ while True:
         res_payload = {
             "resourceKey": {
                 "name": address,
-                "adapterKindKey": "SuperPingAdapter",
+                "adapterKindKey": "Super-PingAdapter",
+                #"adapterInstanceId": adapter_id,
                 "resourceKindKey": resource_type
             },
             "properties": {
                 "address": address
             }
         }
-        r = post(f"/api/resources/adapterkinds/SuperPingAdapter", res_payload)
+        r = post(f"/api/resources/adapterkinds/Super-PingAdapter", res_payload)
         res_id = r["identifier"]
 
     # Deal with metrics
@@ -500,7 +521,7 @@ while True:
     for metric, value in result.items():
         if metric == "type" or metric == "address" or metric.startswith("$"):
             continue
-    #    print(f"superping.{resource_type}.{metric} {value}", address, res_id)
+    #    print(f"Super-Ping.{resource_type}.{metric} {value}", address, res_id)
         stat_list.append({
             "statKey": metric,
             "timestamps": [int(time.time() * 1000)],
@@ -513,6 +534,7 @@ while True:
             "stat-contents": stat_list,
         }]
     }
+    print(payload)
     print(f"Posted {len(result)-2} metrics for {address} ({resource_type} {result})")
     post("/api/resources/stats", payload)
 
