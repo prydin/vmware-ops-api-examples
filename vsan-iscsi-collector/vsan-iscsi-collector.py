@@ -1,15 +1,12 @@
 # python
-#!/usr/bin/env python3
-"""
-vsan-iscsi-collector.py
-
-Collects host profile information from vCenter and sends it to vROps.
-"""
+# !/usr/bin/env python3
+import datetime
 from modulefinder import packagePathMap
 from urllib.error import HTTPError
 
-from pyVmomi import vim
+from pyVmomi import vim, CreateManagedType, SoapStubAdapter
 from pyVim.connect import SmartConnect
+from pyVmomi.VmomiSupport import F_OPTIONAL
 import argparse
 import ssl
 import json
@@ -148,10 +145,8 @@ def query_resource(query, page=0):
     return response["resourceList"] if response else []
 
 
-def create_resource_maybe(adapter_type, resource_type, vc_object, vcenter_id):
+def create_resource_maybe(adapter_type, resource_type, name, unique_key):
     """Create a resource in vROps if it doesn't exist."""
-    moid = vc_object._moId
-    unique_key = f"{vcenter_id}:{moid}"
     query = {
         "adapterKind": [adapter_type],
         "resourceKind": [resource_type],
@@ -160,15 +155,37 @@ def create_resource_maybe(adapter_type, resource_type, vc_object, vcenter_id):
     }
     resources = query_resource(query)
     if not resources:
-        logger.debug("Resource not found, creating: %s %s %s", adapter_type, resource_type, vc_object.name)
-        resource = create_resource(adapter_type, resource_type, vc_object.name,
-                                   {"moid": moid, "vcenterUuid": vcenter_id})
+        logger.debug("Resource not found, creating: %s %s %s", adapter_type, resource_type, name)
+        resource = create_resource(adapter_type, resource_type, name,
+                                   {"uniqueId":  unique_key})
         resource_id = resource["identifier"]
-        add_properties(resource_id, {"uniqueId": unique_key, "vcenter": vcenter_id})
+        add_properties(resource_id, {"uniqueId": unique_key })
     else:
         resource_id = resources[0]["identifier"]
         logger.debug("Resource exists: %s -> %s", unique_key, resource_id)
     return resource_id
+
+
+VSAN_API_VC_SERVICE_ENDPOINT = '/vsanHealth'
+
+
+# Get handles to VSAN objects
+def _GetVsanStub(
+        stub, endpoint=VSAN_API_VC_SERVICE_ENDPOINT,
+        context=None, version='vim.version.version11'
+):
+    index = stub.host.rfind(':')
+    hostname = stub.host[:index]
+    port = int(stub.host.split(":")[-1])
+    vsanStub = SoapStubAdapter(
+        host=hostname,
+        port=port,
+        path=endpoint,
+        version=version,
+        sslContext=context
+    )
+    vsanStub.cookie = stub.cookie
+    return vsanStub
 
 
 # Parse command-line arguments
@@ -176,12 +193,11 @@ parser = argparse.ArgumentParser(description='Collects information about host pr
 parser.add_argument('-H', '--host', required=True, help="vROps host")
 parser.add_argument('-u', '--user', required=True, help="vROps user")
 parser.add_argument('-p', '--password', required=False, help="vROps password")
-parser.add_argument('--passwordfile', required=True, help="vROps password file")
+parser.add_argument('--passwordfile', required=False, help="vROps password file")
 parser.add_argument('-a', '--authsource', help="Authentication source (default: Local)")
 parser.add_argument('-U', '--unsafe', action="store_true", help="Skip certificate checking (unsafe!)")
 parser.add_argument('-v', '--vcuser', required=True, help="vCenter user")
 parser.add_argument('-V', '--vchost', required=True, help="vCenter host")
-parser.add_argument('--components', required=False, action='store_true', help="Include software components")
 parser.add_argument('-W', '--vcpassword', required=False, help="vCenter password")
 parser.add_argument('--vcpasswordfile', required=False, help="vCenter password file")
 parser.add_argument('--verbose', action='store_true', help="Enable verbose logging to stderr")
@@ -220,116 +236,50 @@ logger.debug("Connected to vCenter %s as %s", args.vchost, args.vcuser)
 # Authenticate with vROps
 login(args.host, args.user, args.password, args.authsource)
 
+# Get handles to VSAN objects
+vsan_stub = _GetVsanStub(vcenter._stub, context=ssl_context)
+print(vsan_stub)
+
+# Create an instance of the performance manager
+vsan_perf_mgr = vim.cluster.VsanPerformanceManager(
+                                      'vsan-performance-manager',
+                                      vsan_stub
+                                   )
+
 # Retrieve vCenter content
+class ISCSIHost(vim.ManagedEntity):
+    pass
+CreateManagedType('ISCSIHost', 'vsan-iscsi-host', 'vim.ManagedEntity', 'vim.version.version2', [], [])
 content = vcenter.RetrieveContent()
-vcenter_id = content.about.instanceUuid
-hp_manager = content.hostProfileManager
-profiles = hp_manager.profile
-host_view = content.viewManager.CreateContainerView(content.rootFolder, [vim.HostSystem], True)
+cluster_view = content.viewManager.CreateContainerView(content.rootFolder, [vim.ClusterComputeResource], True)
+try:
+    for cluster in cluster_view.view:
+        print(vsan_perf_mgr.QueryNodeInformation(cluster=cluster))
+        spec = vim.cluster.VsanPerfQuerySpec()
+        spec.entityRefId = "vsan-iscsi-lun:*"
+        endTime = datetime.datetime.utcnow()
+        startTime = endTime - datetime.timedelta(minutes=10)
+        spec.startTime = startTime
+        spec.endTime = endTime
+        spec.interval = 300
 
-# Process host profiles
-for profile in profiles:
-    logger.debug("Processing profile: %s (%s)", getattr(profile, "name", "<no-name>"), getattr(profile, "_moId", "<no-moid>"))
-    profile_id = create_resource_maybe("HostProfileAdapter", "HostProfile", profile, vcenter_id)
-    add_properties(profile_id, {"vcenterName": args.vchost})
+        # print(vsan_perf_mgr.QueryStatsObjectInformation(cluster=cluster))
+        nodes = vsan_perf_mgr.QueryNodeInformation(cluster=cluster)
+        result = vsan_perf_mgr.QueryVsanPerf(querySpecs=[spec], cluster=cluster)
+        for lun in result:
+            metrics = {}
+            lun_name = lun.entityRefId.split(":")[1]
+            resource_id = create_resource_maybe("VSAN_ISCSI", "LUN", lun_name,
+                                                args.vchost + ":" + cluster.name + ":" + lun_name)
+            for value in lun.value:
+                print(lun_name, value.metricId.label, value.metricId.group, value.values)
+                metrics[value.metricId.label] = value.values.split(",")[-1]
+            add_metrics(resource_id, metrics)
 
-    vcenters = query_resource({
-        "adapterKind": ["VMWARE"],
-        "resourceKind": ["vCenter"],
-    })
-    if vcenters:
-        logger.debug("Linking profile to vCenter: %s", vcenters[0]["resourceKey"]["name"])
-        add_relationships(profile_id, [vcenters[0]["identifier"]], "parents")
-
-    noncompliant_hosts = 0
-    for host in profile.entity:
-        print(host)
-        if not isinstance(host, vim.HostSystem):
-            continue
-        resource_id = create_resource_maybe("HostProfileAdapter", "HostCompliance", host, vcenter_id)
-        cc_result = host.complianceCheckResult
-        if not cc_result:
-            logger.debug("No compliance check result for host: %s", host.name)
-            continue
-        if cc_result.complianceStatus == "nonCompliant":
-            noncompliant_hosts += 1
-        add_metrics(resource_id, {
-            "complianceStatus": cc_result.complianceStatus,
-            "lastCheck": str(cc_result.checkTime),
-            "timeSinceLastCheck": int((time.time() - cc_result.checkTime.timestamp()) / 8640) / 10,
-            "failures": len(cc_result.failure)
-        })
-        ops_hosts = query_resource({
-            "adapterKind": ["VMWARE"],
-            "resourceKind": ["HostSystem"],
-            "name": [host.name]
-        })
-        if ops_hosts:
-            add_relationships(resource_id, [ops_hosts[0]["identifier"], profile_id], "parents")
-    add_metrics(profile_id, {"validationStatus": profile.validationState, "nonCompliantHosts": noncompliant_hosts})
-if args.components:
-
-    # Deal with software packages
-    for host in host_view.view:
-        packages = host.configManager.imageConfigManager.FetchSoftwarePackages()
-
-        # Get all packages for this host that are known to ops
-        resources = query_resource({
-           "adapterKind": ["HostProfileAdapter"],
-           "resourceKind": ["HostSoftwarePackage"],
-           "propertyConditions": {
-               "conjunctionOperator": "AND",
-               "conditions": [
-                   {
-                       "stringValue": vcenter_id,
-                       "key": "vcenterUuid",
-                       "operator": "EQ"
-                   },
-                   {
-                       "stringValue": host._moId,
-                       "key": "hostId",
-                       "operator": "EQ"
-                   }
-               ]
-           }
-        })
-        # Build a set of known package names for this host
-        known_package_names = {}
-        for resource in resources:
-            known_package_names[resource["resourceKey"]["name"]] = resource["identifier"]
-
-        for package in packages:
-
-            # Have we already seen this package?
-            if package.name in known_package_names:
-                resource_id = known_package_names[package.name]
-                logger.debug("Software package already exists: %s on host %s", package.name, host.name)
-            else:
-                # New resource. Create it!
-                new_resource = create_resource("HostProfileAdapter", "HostSoftwarePackage", f"{package.name}",{ "hostId": host._moId, "vcenterUuid": vcenter_id, "packageId": package.name})
-                resource_id = new_resource["identifier"]
-                logger.debug("Created software package resource: %s on host %s", package.name, host.name)
-
-                # Form relationship to the host. We only need to do this once, since it's not changing.
-                # Look up the corresponding host resource in vROps
-                ops_hosts = query_resource({
-                    "adapterKind": ["VMWARE"],
-                    "resourceKind": ["HostSystem"],
-                    "name": [host.name]})
-                if len(ops_hosts) > 0:
-                    ops_host = ops_hosts[0]["identifier"]
-                    add_relationships(resource_id, [ops_host], "parents")
-
-            add_properties(resource_id, {
-                "hostName": host.name,
-                "hostId": host._moId,
-                "vcenterUuid": vcenter_id,
-                "fullName": package.summary,
-                "description": package.description,
-                "version": package.version,
-                "vendor": package.vendor,
-                "acceptanceLevel": package.acceptanceLevel
-            })
-
-
-host_view.Destroy()
+            # Add relationship to cluster
+            clusters = query_resource({ "adapterKind": ["VMWARE"], "resourceKind": ["ClusterComputeResource"], "name": [cluster.name]})
+            if clusters:
+                cluster_id = clusters[0]["identifier"]
+                add_relationships(resource_id, [cluster_id], "PARENT")
+finally:
+    cluster_view.Destroy()
