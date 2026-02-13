@@ -1,10 +1,10 @@
-#!/bin/zsh
+#!/bin/bash
 ############################################################################################################
 # THIS IS EXAMPLE CODE! USE AT YOUR OWN RISK. DO NOT USE IN PRODUCTION ENVIRONMENTS WITHOUT PROPER TESTING AND REVIEW
 ############################################################################################################
 
 # Get the directory where this script is located
-SCRIPT_DIR="${0:A:h}"
+SCRIPT_DIR=`dirname "${BASH_SOURCE[0]}"`
 cd "$SCRIPT_DIR"
 
 VENV_DIR="venv"
