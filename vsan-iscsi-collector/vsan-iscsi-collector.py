@@ -126,7 +126,7 @@ def add_metrics(id, stats):
         stat_list.append({
             "statKey": k,
             "timestamps": [int(time.time() * 1000)],
-            "values": [v]
+            "data": [v]
         })
     payload = {
         "resource-stat-content": [{
@@ -262,7 +262,7 @@ try:
         for lun in result:
             metrics = {}
             lun_name = lun.entityRefId.split(":")[1]
-            resource_id = create_resource_maybe("VSAN_ISCSI", "LUN", lun_name,
+            resource_id = create_resource_maybe("VSAN_ISCSI", "LUN_test", lun_name,
                                                 args.vchost + ":" + cluster.name + ":" + lun_name)
             for value in lun.value:
                 scale = 0.001 if "latency" in value.metricId.label else 1.0 # We want latency number is milliseconds, not microseconds
