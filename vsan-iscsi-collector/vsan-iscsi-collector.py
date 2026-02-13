@@ -252,7 +252,7 @@ try:
     for cluster in cluster_view.view:
         spec = vim.cluster.VsanPerfQuerySpec()
         spec.entityRefId = "vsan-iscsi-lun:*"
-        endTime = datetime.datetime.utcnow()
+        endTime = datetime.datetime.now(datetime.UTC)
         startTime = endTime - datetime.timedelta(minutes=10)
         spec.startTime = startTime
         spec.endTime = endTime
