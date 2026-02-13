@@ -1,19 +1,19 @@
-# python
-# !/usr/bin/env python3
-import datetime
-from modulefinder import packagePathMap
-from urllib.error import HTTPError
-
-from pyVmomi import vim, CreateManagedType, SoapStubAdapter
-from pyVim.connect import SmartConnect
-from pyVmomi.VmomiSupport import F_OPTIONAL
+#!/usr/bin/env python3
 import argparse
-import ssl
+import datetime
 import json
-import time
-import sys
 import logging
+import ssl
+import sys
+import time
 from urllib import request
+
+from pyVim.connect import SmartConnect
+from pyVmomi import vim, SoapStubAdapter
+
+############################################################################################################
+# THIS IS EXAMPLE CODE! USE AT YOUR OWN RISK. DO NOT USE IN PRODUCTION ENVIRONMENTS WITHOUT PROPER TESTING AND REVIEW
+############################################################################################################.
 
 # Constants
 PAGESIZE = 1000
@@ -22,7 +22,7 @@ headers = {"Accept": "application/json", "Content-Type": "application/json"}
 ssl_context = ssl.create_default_context()
 
 # Logger (configured after parsing args)
-logger = logging.getLogger("host_profile_collector")
+logger = logging.getLogger("vsan_iscsi_collector")
 
 
 def login(host, username, password, auth_source=None):
@@ -189,7 +189,7 @@ def _GetVsanStub(
 
 
 # Parse command-line arguments
-parser = argparse.ArgumentParser(description='Collects information about host profiles')
+parser = argparse.ArgumentParser(description='Collects information about vSAN iSCSI LUNs')
 parser.add_argument('-H', '--host', required=True, help="vROps host")
 parser.add_argument('-u', '--user', required=True, help="vROps user")
 parser.add_argument('-p', '--password', required=False, help="vROps password")
@@ -238,7 +238,6 @@ login(args.host, args.user, args.password, args.authsource)
 
 # Get handles to VSAN objects
 vsan_stub = _GetVsanStub(vcenter._stub, context=ssl_context)
-print(vsan_stub)
 
 # Create an instance of the performance manager
 vsan_perf_mgr = vim.cluster.VsanPerformanceManager(
@@ -247,14 +246,10 @@ vsan_perf_mgr = vim.cluster.VsanPerformanceManager(
                                    )
 
 # Retrieve vCenter content
-class ISCSIHost(vim.ManagedEntity):
-    pass
-CreateManagedType('ISCSIHost', 'vsan-iscsi-host', 'vim.ManagedEntity', 'vim.version.version2', [], [])
 content = vcenter.RetrieveContent()
 cluster_view = content.viewManager.CreateContainerView(content.rootFolder, [vim.ClusterComputeResource], True)
 try:
     for cluster in cluster_view.view:
-        print(vsan_perf_mgr.QueryNodeInformation(cluster=cluster))
         spec = vim.cluster.VsanPerfQuerySpec()
         spec.entityRefId = "vsan-iscsi-lun:*"
         endTime = datetime.datetime.utcnow()
@@ -263,8 +258,6 @@ try:
         spec.endTime = endTime
         spec.interval = 300
 
-        # print(vsan_perf_mgr.QueryStatsObjectInformation(cluster=cluster))
-        nodes = vsan_perf_mgr.QueryNodeInformation(cluster=cluster)
         result = vsan_perf_mgr.QueryVsanPerf(querySpecs=[spec], cluster=cluster)
         for lun in result:
             metrics = {}
@@ -272,8 +265,9 @@ try:
             resource_id = create_resource_maybe("VSAN_ISCSI", "LUN", lun_name,
                                                 args.vchost + ":" + cluster.name + ":" + lun_name)
             for value in lun.value:
-                print(lun_name, value.metricId.label, value.metricId.group, value.values)
-                metrics[value.metricId.label] = value.values.split(",")[-1]
+                scale = 0.001 if "latency" in value.metricId.label else 1.0 # We want latency number is milliseconds, not microseconds
+                metrics[value.metricId.label] = float(value.values.split(",")[-1]) * scale
+                logger.debug("Parsed metric for %s: %s=%s", lun_name, value.metricId.label, metrics[value.metricId.label])
             add_metrics(resource_id, metrics)
 
             # Add relationship to cluster
