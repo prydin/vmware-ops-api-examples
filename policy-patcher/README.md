@@ -5,7 +5,7 @@ Utility for patching policy settings in VCF Operations (vROps) by applying a JSO
 ## Usage
 
 ```commandline
-python property-patcher.py [-h] -H HOST -u USER -p PASSWORD [-a AUTHSOURCE] -n NAME -t TYPE [-k ADAPTER_KIND] -r RESOURCE_KIND -f FILE -e EXPRESSION [-U]
+python policy-patcher.py [-h] -H HOST -u USER -p PASSWORD [-a AUTHSOURCE] -n NAME -t TYPE [-k ADAPTER_KIND] -r RESOURCE_KIND -f FILE -e EXPRESSION [-U]
 ```
 
 ### Arguments
@@ -34,7 +34,7 @@ python property-patcher.py [-h] -H HOST -u USER -p PASSWORD [-a AUTHSOURCE] -n N
 Patch a policy named "Test policy" for `ClusterComputeResource` settings by updating the capacity buffer setting:
 
 ```commandline
-python property-patcher.py -H 192.168.1.220 -u admin --unsafe \
+python policy-patcher.py -H 192.168.1.220 -u admin --unsafe \
   -n "Test policy" -t "CAPACITY_BUFFER" -r ClusterComputeResource \
   -e "$.capacitySettings.capacity.capacityBufferSettings[0].capacityBuffer" \
   -f update.json

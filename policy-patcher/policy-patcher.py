@@ -1,13 +1,10 @@
 import argparse
 import ssl
-import re
 import json
 import sys
 from urllib.error import URLError, HTTPError
 from urllib import request
-from jsonpath_ng import jsonpath, parse
-
-PAGESIZE = 1000
+from jsonpath_ng import parse
 
 url_base = ""
 headers = {"Accept": "application/json", "Content-Type": "application/json"}
@@ -70,66 +67,6 @@ def login(host, username, password, auth_source=None):
         sys.exit(1)
     headers["Authorization"] = f"vRealizeOpsToken {token}"
 
-
-def post(uri, data):
-    """
-    Sends a POST request to the vRealize Operations API.
-
-    Args:
-        uri (str): The API endpoint URI.
-        data (dict): The payload to send in the POST request.
-
-    Returns:
-        dict: The JSON-decoded response from the API.
-
-    Raises:
-        Exception: If the HTTP request fails or returns a non-2xx status code.
-    """
-    payload = json.dumps(data).encode("utf-8")
-    rq = request.Request(url_base + uri, data=payload, headers=headers, method="POST")
-    try:
-        response = request.urlopen(rq, context=ssl_context)
-    except HTTPError as e:
-        body = e.read().decode() if hasattr(e, "read") else ""
-        raise Exception(f"HTTP Error: {e.code}, details: {body}") from e
-
-    code, text = _read_response(response)
-    if not (200 <= (code or 0) < 300):
-        raise Exception(f"HTTP Status: {code}, details: {text}")
-    if not text:
-        return None
-    return json.loads(text)
-
-
-def put(uri, data):
-    """
-    Sends a PUT request to the vRealize Operations API.
-
-    Args:
-        uri (str): The API endpoint URI.
-        data (dict): The payload to send in the POST request.
-
-    Returns:
-        dict: The JSON-decoded response from the API.
-
-    Raises:
-        Exception: If the HTTP request fails or returns a non-2xx status code.
-    """
-    payload = json.dumps(data).encode("utf-8")
-    rq = request.Request(url_base + uri, data=payload, headers=headers, method="PUT")
-    try:
-        response = request.urlopen(rq, context=ssl_context)
-    except HTTPError as e:
-        body = e.read().decode() if hasattr(e, "read") else ""
-        raise Exception(f"HTTP Error: {e.code}, details: {body}") from e
-
-    code, text = _read_response(response)
-    if not (200 <= (code or 0) < 300):
-        raise Exception(f"HTTP Status: {code}, details: {text}")
-    if not text:
-        return None
-    return json.loads(text)
-
 def patch(uri, data):
     """
     Sends a PATCH request to the vRealize Operations API.
@@ -168,13 +105,7 @@ def get(uri):
     return json.loads(response.read().decode("UTF-8"))
 
 
-def delete(uri):
-    rq = request.Request(url=url_base + uri, headers=headers, method="DELETE")
-    response = request.urlopen(url=rq, context=ssl_context)
-    if response.status not in range(200, 299):
-        raise Exception("HTTP Status: %d, details: %s" % (response.status, response.read().decode("UTF-8")))
-
-def get_pollicies():
+def get_policies():
     return get("/api/policies")["policySummaries"]
 
 def get_policy_details(policy_id, type, adapter_kind=None, resource_kind=None):
@@ -195,7 +126,7 @@ def main():
     Main function to build relationships between resources based on properties.
     """
     parser = argparse.ArgumentParser(prog="policy-patcher",
-                                     description="Builds relationships between resources based on properties")
+                                     description="Patches a policy based on a jsonpath expression")
     parser.add_argument("-H", "--host", required=True, help="The address of the VCF Ops host")
     parser.add_argument("-u", "--user", required=True, help="The VCF Ops user")
     parser.add_argument("-p", "--password", required=True, help="The VCF Ops password")
@@ -242,15 +173,12 @@ def main():
         else:
             raise
 
-    policies = get_pollicies()
+    policies = get_policies()
     policy = next((p for p in policies if p["name"] == args.name), None)
     if not policy:
         sys.stderr.write(f"Policy with name '{args.name}' not found\n")
         sys.exit(1)
     policy_details = get_policy_details(policy["id"], args.type, args.adapter_kind, args.resource_kind)
-    print(policy_details)
-
-    print(jsonpath_expr.find(policy_details))
 
     for match in jsonpath_expr.find(policy_details):
         print(f"Updating property at path: {match.full_path}")
