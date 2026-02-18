@@ -1,4 +1,4 @@
-# Policy Property Patcher
+# Policy Patcher
 
 Utility for patching policy settings in VCF Operations (vROps) by applying a JSON file to one or more objects selected with a JSONPath expression.
 
