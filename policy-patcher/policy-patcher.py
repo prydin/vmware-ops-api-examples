@@ -1,43 +1,31 @@
 import argparse
-import ssl
-import json
+import io
 import sys
-from urllib.error import URLError, HTTPError
-from urllib import request
-from jsonpath_ng import parse
+import logging
+import zipfile
+import xml.etree.ElementTree as ET
+import requests
+from requests.exceptions import RequestException
 
 url_base = ""
-headers = {"Accept": "application/json", "Content-Type": "application/json"}
-ssl_context = ssl.create_default_context()
+session = requests.Session()
+session.headers.update({"Accept": "application/json", "Content-Type": "application/json"})
 
-
-def _read_response(response):
-    """
-    Reads the HTTP response and extracts the status code and content.
-
-    Args:
-        response: The HTTP response object.
-
-    Returns:
-        tuple: A tuple containing the HTTP status code and the response content as a string.
-    """
-    code = getattr(response, "status", None)
-    if code is None:
-        try:
-            code = response.getcode()
-        except Exception:
-            code = None
-    content = response.read()
-    text = content.decode("utf-8") if content else ""
-    return code, text
+logging.basicConfig(
+    level=logging.WARNING,
+    format="%(asctime)s %(levelname)-8s %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
+    stream=sys.stderr,
+)
+logger = logging.getLogger(__name__)
 
 
 def login(host, username, password, auth_source=None):
     """
-    Authenticates with the vRealize Operations API and retrieves a session token.
+    Authenticates with the VCF Ops API and stores the session token.
 
     Args:
-        host (str): The vRealize Operations host.
+        host (str): The VCF Ops host.
         username (str): The username for authentication.
         password (str): The password for authentication.
         auth_source (str, optional): The authentication source. Defaults to None.
@@ -47,149 +35,216 @@ def login(host, username, password, auth_source=None):
     """
     global url_base
     url_base = f"https://{host}/suite-api"
+    logger.debug(f"Logging in to {url_base} as '{username}'")
     cred_payload = {"username": username, "password": password}
     if auth_source:
         cred_payload["authSource"] = auth_source
-    credentials = json.dumps(cred_payload).encode("utf-8")
 
-    rq = request.Request(url_base + "/api/auth/token/acquire", data=credentials, headers=headers, method="POST")
-    response = request.urlopen(rq, context=ssl_context)
-    code, text = _read_response(response)
-
-    if code != 200:
-        sys.stderr.write(f"{code} {text}\n")
+    response = session.post(f"{url_base}/api/auth/token/acquire", json=cred_payload)
+    if response.status_code != 200:
+        logger.error(f"Authentication failed: {response.status_code} {response.text}")
         sys.exit(1)
 
-    json_data = json.loads(text)
-    token = json_data.get("token")
+    token = response.json().get("token")
     if not token:
-        sys.stderr.write("Authentication response did not contain a token\n")
+        logger.error("Authentication response did not contain a token")
         sys.exit(1)
-    headers["Authorization"] = f"vRealizeOpsToken {token}"
+    session.headers.update({"Authorization": f"vRealizeOpsToken {token}"})
+    logger.info("Successfully authenticated")
 
-def patch(uri, data):
+
+
+def post_multipart(uri, filename, data):
     """
-    Sends a PATCH request to the vRealize Operations API.
+    Sends a multipart POST request to the VCF Ops API, uploading a file.
 
     Args:
         uri (str): The API endpoint URI.
-        data (dict): The payload to send in the POST request.
+        filename (str): The filename to use for the uploaded part.
+        data (bytes): The file content to upload.
 
     Returns:
-        dict: The JSON-decoded response from the API.
+        dict | None: The JSON-decoded response, or None if the body is empty.
 
     Raises:
-        Exception: If the HTTP request fails or returns a non-2xx status code.
+        Exception: If the request fails or returns a non-2xx status code.
     """
-    payload = json.dumps(data).encode("utf-8")
-    rq = request.Request(url_base + uri, data=payload, headers=headers, method="PATCH")
-    try:
-        response = request.urlopen(rq, context=ssl_context)
-    except HTTPError as e:
-        body = e.read().decode() if hasattr(e, "read") else ""
-        raise Exception(f"HTTP Error: {e.code}, details: {body}") from e
-
-    code, text = _read_response(response)
-    if not (200 <= (code or 0) < 300):
-        raise Exception(f"HTTP Status: {code}, details: {text}")
-    if not text:
-        return None
-    return json.loads(text)
+    logger.debug(f"POST (multipart) {uri} — file={filename}, {len(data)} bytes")
+    # Use requests.post() directly (not the session) so no session-level
+    # Content-Type header can override the multipart boundary that requests generates
+    response = requests.post(
+        f"{url_base}{uri}",
+        files={"policy": (filename, data, "application/zip")},
+        headers={"Authorization": session.headers.get("Authorization")},
+        verify=session.verify,
+    )
+    logger.debug(f"POST (multipart) response: {response.status_code}")
+    response.raise_for_status()
+    return response.json() if response.content else None
 
 
 def get(uri):
-    rq = request.Request(url=url_base + uri, headers=headers)
-    response = request.urlopen(url=rq, context=ssl_context)
-    if response.status != 200:
-        raise Exception("HTTP Status: %d, details: %s" % (response.status, response.read().decode("UTF-8")))
-    return json.loads(response.read().decode("UTF-8"))
+    """
+    Sends a GET request to the VCF Ops API.
+
+    Args:
+        uri (str): The API endpoint URI.
+
+    Returns:
+        dict: The JSON-decoded response.
+
+    Raises:
+        Exception: If the request fails or returns a non-200 status code.
+    """
+    logger.debug(f"GET {uri}")
+    response = session.get(f"{url_base}{uri}")
+    logger.debug(f"GET response: {response.status_code}")
+    response.raise_for_status()
+    return response.json()
+
+
+def get_raw(uri):
+    """
+    Sends a GET request and returns the raw response bytes.
+
+    Args:
+        uri (str): The API endpoint URI.
+
+    Returns:
+        bytes: The raw response body.
+
+    Raises:
+        Exception: If the request fails or returns a non-200 status code.
+    """
+    logger.debug(f"GET (raw) {uri}")
+    response = session.get(f"{url_base}{uri}", headers={"Accept": "*/*"})
+    logger.debug(f"GET (raw) response: {response.status_code}, {len(response.content)} bytes")
+    response.raise_for_status()
+    return response.content
 
 
 def get_policies():
     return get("/api/policies")["policySummaries"]
 
-def get_policy_details(policy_id, type, adapter_kind=None, resource_kind=None):
-    url = f"/api/policies/{policy_id}/settings?type={type}"
-    if adapter_kind:
-        url += f"&adapterKind={adapter_kind}"
-    if resource_kind:
-        url += f"&resourceKind={resource_kind}"
-    return get(url)
 
-def patch_policy_details(policy_id, type, adapter_kind, resource_kind, settings):
-    url = f"/api/policies/{policy_id}/settings?type={type}&adapterKind={adapter_kind}&resourceKind={resource_kind}"
-    return patch(url, settings)
+def import_policy(data):
+    return post_multipart("/api/policies/import?forceImport=true", "exportedPolicies.zip", data)
+
+
+def export_policy(policy_id):
+    return get_raw(f"/api/policies//export?id={policy_id}")
 
 
 def main():
     """
-    Main function to build relationships between resources based on properties.
+    Main entry point. Fetches a named policy from VCF Ops, applies an XPath-based
+    patch from a local XML file, and re-imports the modified policy.
     """
     parser = argparse.ArgumentParser(prog="policy-patcher",
-                                     description="Patches a policy based on a jsonpath expression")
+                                     description="Patches a policy based on an XPath expression")
     parser.add_argument("-H", "--host", required=True, help="The address of the VCF Ops host")
     parser.add_argument("-u", "--user", required=True, help="The VCF Ops user")
     parser.add_argument("-p", "--password", required=True, help="The VCF Ops password")
     parser.add_argument("-a", "--authsource", required=False,
                         help="The VCF Ops authentication source. Default is Local")
     parser.add_argument("-n", "--name", required=True, help="The name of the policy to patch")
-    parser.add_argument("-t", "--type", required=True, help="Policy type")
-    parser.add_argument("-k", "--adapter-kind", required=False, default="VMWARE", help="Adapter kind for policy settings")
-    parser.add_argument("-r", "--resource-kind", required=True, help="Resource kind for policy settings")
-    parser.add_argument("-f", "--file", required=True, help="Path to JSON file containing the properties to patch")
-    parser.add_argument("-e", "--expression", required=False, help="JSONPath expression to select properties to patch from the file")
+    parser.add_argument("-f", "--file", required=True,
+                        help="Path to XML file containing the replacement XML element")
+    parser.add_argument("-e", "--expression", required=False,
+                        help="XPath expression to select the element to patch in the exported policy")
     parser.add_argument("-U", "--unsafe", required=False, action="store_true",
                         help="Skip certificate checking (this is unsafe!)")
+    parser.add_argument("-v", "--verbose", required=False, action="store_true",
+                        help="Enable verbose/debug logging")
 
     args = parser.parse_args()
 
+    if args.verbose:
+        logger.setLevel(logging.DEBUG)
+        logging.getLogger().setLevel(logging.DEBUG)
+        logger.debug("Verbose logging enabled")
+
     if args.unsafe:
-        # Unsafe: accept self-signed certificates
-        ssl_context = ssl._create_unverified_context()
-        globals()["ssl_context"] = ssl_context
+        logger.debug("Certificate verification disabled (--unsafe)")
+        session.verify = False
+        import urllib3
+        urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
-    # Parse the JSON path
-    try:
-        jsonpath_expr = parse(args.expression)
-    except Exception as e:
-        sys.stderr.write(f"Invalid JSONPath expression: {e}\n")
-        sys.exit(1)
-
-    # Load JSON file
-    try:
-        with open(args.file, "r") as f:
-            replacement = json.load(f)
-    except Exception as e:
-        sys.stderr.write(f"Failed to load JSON file: {e}\n")
-        sys.exit(1)
+    logger.debug(f"Reading replacement XML from '{args.file}'")
+    with open(args.file, "r") as f:
+        file_content = f.read()
+    replacement_xml = ET.fromstring(file_content)
+    logger.debug(f"Replacement XML root tag: <{replacement_xml.tag}>")
 
     try:
         login(args.host, args.user, args.password, args.authsource)
-    except URLError as e:
+    except RequestException as e:
         if "certificate" in str(e).lower():
-            sys.stderr.write(
-                "The server appears to have a self-signed certificate. Override by adding the --unsafe option (not recommended in production)\n")
+            logger.error(
+                "The server appears to have a self-signed certificate. "
+                "Override by adding the --unsafe option (not recommended in production)")
             sys.exit(1)
-        else:
-            raise
+        raise
 
+    logger.debug("Fetching policy list")
     policies = get_policies()
     policy = next((p for p in policies if p["name"] == args.name), None)
     if not policy:
-        sys.stderr.write(f"Policy with name '{args.name}' not found\n")
+        logger.error(f"Policy '{args.name}' not found")
         sys.exit(1)
-    policy_details = get_policy_details(policy["id"], args.type, args.adapter_kind, args.resource_kind)
+    logger.info(f"Found policy '{args.name}' (id={policy['id']})")
 
-    for match in jsonpath_expr.find(policy_details):
-        print(f"Updating property at path: {match.full_path}")
-        match.value.update(replacement)
+    # Export the policy as a zip containing exportedPolicies.xml
+    logger.debug(f"Exporting policy id={policy['id']}")
+    exp = export_policy(policy["id"])
+    logger.debug(f"Exported policy archive: {len(exp)} bytes")
 
-    print("Updated policy details:")
-    print(policy_details)
+    root = None
+    with zipfile.ZipFile(io.BytesIO(exp)) as z:
+        logger.debug(f"Files in exported policy archive: {[fi.filename for fi in z.infolist()]}")
+        for file_info in z.infolist():
+            if file_info.filename != "exportedPolicies.xml":
+                continue
+            logger.debug(f"Processing '{file_info.filename}'")
+            with z.open(file_info) as f:
+                content = f.read().decode("utf-8")
+            try:
+                root = ET.fromstring(content)
+                matches = root.findall(args.expression)
+                if not matches:
+                    logger.warning(f"XPath expression '{args.expression}' matched no elements")
+                else:
+                    logger.info(f"XPath expression matched {len(matches)} element(s)")
+                    for match in matches:
+                        logger.debug(f"Before patch: {ET.tostring(match, encoding='unicode')}")
+                        for child in list(match):
+                            logger.debug(f"  Removing child: <{child.tag}>")
+                            match.remove(child)
+                        match.append(replacement_xml)
+                        logger.debug(f"After patch:  {ET.tostring(match, encoding='unicode')}")
+            except ET.ParseError as e:
+                logger.error(f"Failed to parse exported policy as XML: {e}")
+                logger.debug(f"Raw content:\n{content}")
+                sys.exit(1)
 
-    patch_policy_details(policy["id"], args.type, args.adapter_kind, args.resource_kind, policy_details)
-    print("Policy updated successfully.")
+    if root is None:
+        logger.error("'exportedPolicies.xml' not found in exported archive")
+        sys.exit(1)
 
+    logger.debug(f"Final XML:\n{ET.tostring(root, encoding='unicode')}")
+
+    # Build an in-memory zip with the updated XML and import it back
+    updated_xml_str = ET.tostring(root, encoding="utf-8").decode("utf-8")
+    zip_buffer = io.BytesIO()
+    with zipfile.ZipFile(zip_buffer, mode="w", compression=zipfile.ZIP_DEFLATED) as zout:
+        zout.writestr("exportedPolicies.xml", updated_xml_str)
+    zip_bytes = zip_buffer.getvalue()
+    logger.debug(f"Built in-memory zip archive: {len(zip_bytes)} bytes")
+
+    logger.debug("Importing updated policy zip")
+    import_policy(zip_bytes)
+
+    logger.info("Policy patched successfully")
 
 
 if __name__ == "__main__":
