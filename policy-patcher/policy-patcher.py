@@ -140,6 +140,7 @@ def main():
     Main entry point. Fetches a named policy from VCF Ops, applies an XPath-based
     patch from a local XML file, and re-imports the modified policy.
     """
+
     parser = argparse.ArgumentParser(prog="policy-patcher",
                                      description="Patches a policy based on an XPath expression")
     parser.add_argument("-H", "--host", required=True, help="The address of the VCF Ops host")
@@ -235,6 +236,7 @@ def main():
 
     # Build an in-memory zip with the updated XML and import it back
     updated_xml_str = ET.tostring(root, encoding="utf-8").decode("utf-8")
+
     zip_buffer = io.BytesIO()
     with zipfile.ZipFile(zip_buffer, mode="w", compression=zipfile.ZIP_DEFLATED) as zout:
         zout.writestr("exportedPolicies.xml", updated_xml_str)
@@ -242,7 +244,7 @@ def main():
     logger.debug(f"Built in-memory zip archive: {len(zip_bytes)} bytes")
 
     logger.debug("Importing updated policy zip")
-    import_policy(zip_bytes)
+    print(import_policy(zip_bytes))
 
     logger.info("Policy patched successfully")
 

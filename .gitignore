@@ -160,3 +160,4 @@ cython_debug/
 #.idea/
 /get-single-metric/data
 logs-import-export-alerts/out.json
+.DS_Store

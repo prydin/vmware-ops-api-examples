@@ -1,0 +1,12 @@
+manualVmConfig:
+    count: 2
+    cpu: 4
+    memory: 8
+    storage: 100
+    memoryUtilization: 50
+    cpuUtilization: 50
+    storageUtilization: 50
+    cpuUtilizationGrowthRate: 10
+    memoryUtilizationGrowthRate: 10
+    storageUtilizationGrowthRate: 10
+commonUtilizationGrowthRate: 10

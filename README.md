@@ -16,6 +16,8 @@ Repository of various useful API examples
 | [slo-calc-mp](slo-calc-mp)                                         | Calculates SLO attainment scores as a custom management pack                               |
 | [alert-dumper](alert-dumper)                                       | Exports alert definitions and symptom definitions to a CSV file                            |
 | [rel-builder](rel-builder)                                         | Example script for building relationships between objects based on various criteria        |
+| [what-if](what-if)                                                 | Demonstrates the what-if API                                                               |
+
 
 
 
